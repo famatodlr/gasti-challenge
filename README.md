@@ -15,7 +15,7 @@ Lo que no está bien es vibecodear sin criterio: usar IA como buscador glorifica
 
 ## El task
 
-Construir un **mini-Gasti**: una app donde el usuario chatea con un agente de IA sobre sus finanzas, y el agente usa tools (function calling) para responder con datos reales, no inventados.
+Construir una herramienta para finanzas personales. Que tiene que hacer? Lo que vos creas que tiene que hacer, la libertad es total. 
 
 ### Stack
 
