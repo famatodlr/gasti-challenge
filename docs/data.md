@@ -4,7 +4,7 @@
 
 The starter already includes `data/transactions.json` with 50 ARS expense transactions from 2026-03-15 through 2026-05-08. That satisfies the challenge count and approximate 60-day window.
 
-For implementation, the data should be normalized to support stronger product insights. The main change should be category quality: rent should not live in `otros`, and groceries should be distinguishable from delivery or cafes.
+The raw file keeps its original broad categories. Domain code normalizes them into product finance categories for analytics and tool outputs, so the raw dataset remains stable while user-facing summaries avoid broad buckets.
 
 ## Data Goals
 
@@ -28,6 +28,25 @@ type Transaction = {
   amount: number; // positive expense amount in ARS pesos
   currency: "ARS";
   category:
+    | "comida"
+    | "transporte"
+    | "salud"
+    | "otros"
+    | "entretenimiento"
+    | "servicios"
+    | "educacion";
+  description: string;
+  merchant: string;
+};
+```
+
+## Normalized Domain Schema
+
+Analytics use a normalized transaction shape:
+
+```ts
+type NormalizedTransaction = Omit<Transaction, "category"> & {
+  category:
     | "vivienda"
     | "servicios"
     | "suscripciones"
@@ -38,29 +57,40 @@ type Transaction = {
     | "educacion"
     | "compras"
     | "ocio";
-  description: string;
-  merchant: string;
+  rawCategory: Transaction["category"];
 };
 ```
 
 ## Category Design
 
-Target distribution for 50 transactions:
+Current raw distribution for 50 transactions:
+
+| Raw category | Count | Notes |
+|---|---:|---|
+| `comida` | 13 | Groceries plus eating out in the source data |
+| `transporte` | 8 | SUBE, rides, fuel |
+| `salud` | 5 | Pharmacy, gym, health plan |
+| `otros` | 7 | Rent, shopping, bank fee, one transfer |
+| `entretenimiento` | 6 | Subscriptions and cinema |
+| `servicios` | 8 | Utilities, phone, internet |
+| `educacion` | 3 | Courses and books |
+
+Current normalized distribution:
 
 | Category | Count | Purpose |
 |---|---:|---|
 | `vivienda` | 2 | Monthly rent pattern |
-| `servicios` | 8 | Electricity, gas, water, internet, phone |
-| `suscripciones` | 6 | Netflix, Spotify, Disney+, app subscriptions |
-| `supermercado` | 6 | Larger grocery trips |
-| `comida_fuera` | 10 | Delivery, cafes, lunches, restaurants |
+| `servicios` | 9 | Electricity, gas, water, internet, phone, bank service fee |
+| `suscripciones` | 5 | Netflix, Spotify, Disney+, app subscriptions |
+| `supermercado` | 4 | Larger grocery trips |
+| `comida_fuera` | 9 | Delivery, cafes, lunches, restaurants |
 | `transporte` | 8 | SUBE, Uber, Cabify, fuel |
-| `salud` | 4 | Pharmacy, gym, health plan |
+| `salud` | 5 | Pharmacy, gym, health plan |
 | `educacion` | 3 | Courses and books |
-| `compras` | 2 | Mercado Libre and electronics |
-| `ocio` | 1 | Cinema or one-off leisure outside subscriptions |
+| `compras` | 3 | Mercado Libre and electronics |
+| `ocio` | 2 | Cinema or one-off leisure outside subscriptions |
 
-The exact counts can move slightly, but the dataset needs recurring costs and flexible spending in balance.
+The normalization is intentionally small and deterministic. It is based on merchant/intent hints such as `Propietario` to `vivienda`, subscription merchants to `suscripciones`, supermarkets to `supermercado`, delivery/cafes/restaurants to `comida_fuera`, and `Mercado Libre` to `compras`.
 
 ## Realistic Merchant Set
 

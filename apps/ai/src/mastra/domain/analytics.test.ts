@@ -12,8 +12,32 @@ test('loads the normalized transaction dataset in ascending calculation order', 
   assert.equal(transactions[0]?.id, 'txn_050');
   assert.equal(transactions.at(-1)?.id, 'txn_002');
   assert.deepEqual(
-    Array.from(new Set(transactions.map((transaction) => transaction.category))).sort(),
+    Array.from(new Set(transactions.map((transaction) => transaction.rawCategory))).sort(),
     ['comida', 'educacion', 'entretenimiento', 'otros', 'salud', 'servicios', 'transporte'],
+  );
+  assert.deepEqual(
+    Array.from(new Set(transactions.map((transaction) => transaction.category))).sort(),
+    [
+      'comida_fuera',
+      'compras',
+      'educacion',
+      'ocio',
+      'salud',
+      'servicios',
+      'supermercado',
+      'suscripciones',
+      'transporte',
+      'vivienda',
+    ],
+  );
+  assert.deepEqual(
+    transactions
+      .filter((transaction) => transaction.merchant === 'Propietario')
+      .map(({ id, category, rawCategory }) => ({ id, category, rawCategory })),
+    [
+      { id: 'txn_047', category: 'vivienda', rawCategory: 'otros' },
+      { id: 'txn_014', category: 'vivienda', rawCategory: 'otros' },
+    ],
   );
 });
 
@@ -28,8 +52,21 @@ test('summarizes May spending with category groups and top transactions', () => 
   assert.equal(summary.currency, 'ARS');
   assert.equal(summary.total, 499698);
   assert.equal(summary.transactionCount, 15);
-  assert.equal(summary.groups[0]?.key, 'otros');
-  assert.equal(summary.groups[0]?.total, 295000);
+  assert.equal(summary.groups[0]?.key, 'vivienda');
+  assert.equal(summary.groups[0]?.total, 250000);
+  assert.deepEqual(
+    summary.groups.map(({ key, total, count }) => ({ key, total, count })),
+    [
+      { key: 'vivienda', total: 250000, count: 1 },
+      { key: 'salud', total: 83900, count: 2 },
+      { key: 'compras', total: 45000, count: 1 },
+      { key: 'supermercado', total: 38500, count: 1 },
+      { key: 'transporte', total: 29300, count: 4 },
+      { key: 'servicios', total: 28500, count: 1 },
+      { key: 'comida_fuera', total: 15500, count: 3 },
+      { key: 'suscripciones', total: 8998, count: 2 },
+    ],
+  );
   assert.equal(summary.topTransactions[0]?.id, 'txn_014');
   assert.equal(formatARS(summary.total), 'ARS 499.698');
 });

@@ -44,6 +44,13 @@ console.log(
         total: maySummary.total,
         formattedTotal: formatARS(maySummary.total),
         transactionCount: maySummary.transactionCount,
+        categoryBreakdown: maySummary.groups.map((group) => ({
+          category: group.key,
+          total: group.total,
+          formattedTotal: formatARS(group.total),
+          transactionCount: group.count,
+          sharePct: group.sharePct,
+        })),
       },
       aprilVsMayComparison: {
         current: aprilVsMay.current,

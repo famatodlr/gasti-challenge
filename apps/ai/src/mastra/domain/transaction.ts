@@ -1,7 +1,21 @@
 import { z } from 'zod';
 
-export const categories = ['comida', 'transporte', 'salud', 'otros', 'entretenimiento', 'servicios', 'educacion'] as const;
+export const rawCategories = ['comida', 'transporte', 'salud', 'otros', 'entretenimiento', 'servicios', 'educacion'] as const;
 
+export const categories = [
+  'vivienda',
+  'servicios',
+  'suscripciones',
+  'supermercado',
+  'comida_fuera',
+  'transporte',
+  'salud',
+  'educacion',
+  'compras',
+  'ocio',
+] as const;
+
+export const rawCategorySchema = z.enum(rawCategories);
 export const categorySchema = z.enum(categories);
 
 export const dateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isValidISODate, {
@@ -18,21 +32,94 @@ export const dateRangeSchema = z
     path: ['from'],
   });
 
-export const transactionSchema = z.object({
+const transactionBaseSchema = z.object({
   id: z.string().regex(/^txn_\d{3}$/),
   date: dateStringSchema,
   amount: z.number().int().positive(),
   currency: z.literal('ARS'),
-  category: categorySchema,
   description: z.string().min(1),
   merchant: z.string().min(1),
 });
 
+export const rawTransactionSchema = transactionBaseSchema.extend({
+  category: rawCategorySchema,
+});
+
+export const transactionSchema = transactionBaseSchema.extend({
+  category: categorySchema,
+  rawCategory: rawCategorySchema,
+});
+
+export const rawTransactionsSchema = z.array(rawTransactionSchema);
 export const transactionsSchema = z.array(transactionSchema);
 
+export type RawCategory = z.infer<typeof rawCategorySchema>;
 export type Category = z.infer<typeof categorySchema>;
 export type DateRange = z.infer<typeof dateRangeSchema>;
+export type RawTransaction = z.infer<typeof rawTransactionSchema>;
 export type Transaction = z.infer<typeof transactionSchema>;
+
+const serviceMerchants = new Set(['aysa', 'edenor', 'galicia', 'metrogas', 'movistar', 'personal']);
+const subscriptionMerchants = new Set(['disney+', 'netflix', 'spotify']);
+const supermarketMerchants = new Set(['carrefour', 'coto', 'dia', 'jumbo']);
+const eatingOutMerchants = new Set(['havanna', 'mcdonalds', 'pedidosya', 'rappi', 'starbucks']);
+const housingMerchants = new Set(['propietario']);
+const shoppingMerchants = new Set(['mercado libre']);
+const leisureMerchants = new Set(['hoyts', 'mercado pago']);
+
+export function normalizeTransactionCategory(transaction: Pick<RawTransaction, 'category' | 'merchant'>): Category {
+  const merchant = normalizeMerchant(transaction.merchant);
+
+  if (housingMerchants.has(merchant)) {
+    return 'vivienda';
+  }
+
+  if (serviceMerchants.has(merchant)) {
+    return 'servicios';
+  }
+
+  if (subscriptionMerchants.has(merchant)) {
+    return 'suscripciones';
+  }
+
+  if (supermarketMerchants.has(merchant)) {
+    return 'supermercado';
+  }
+
+  if (eatingOutMerchants.has(merchant)) {
+    return 'comida_fuera';
+  }
+
+  if (shoppingMerchants.has(merchant)) {
+    return 'compras';
+  }
+
+  if (leisureMerchants.has(merchant)) {
+    return 'ocio';
+  }
+
+  switch (transaction.category) {
+    case 'comida':
+      return 'comida_fuera';
+    case 'entretenimiento':
+      return 'ocio';
+    case 'otros':
+      return 'compras';
+    case 'transporte':
+    case 'salud':
+    case 'servicios':
+    case 'educacion':
+      return transaction.category;
+  }
+}
+
+export function normalizeTransaction(rawTransaction: RawTransaction): Transaction {
+  return {
+    ...rawTransaction,
+    category: normalizeTransactionCategory(rawTransaction),
+    rawCategory: rawTransaction.category,
+  };
+}
 
 export function formatARS(amount: number): string {
   const roundedAmount = Math.round(amount);
@@ -129,4 +216,8 @@ function isValidISODate(value: string): boolean {
     date.getUTCMonth() === month - 1 &&
     date.getUTCDate() === day
   );
+}
+
+function normalizeMerchant(value: string): string {
+  return value.trim().toLocaleLowerCase('es-AR');
 }
