@@ -1,0 +1,452 @@
+[
+  {
+    "id": "txn_001",
+    "date": "2026-05-08",
+    "amount": 4500,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Almuerzo delivery",
+    "merchant": "Rappi"
+  },
+  {
+    "id": "txn_002",
+    "date": "2026-05-08",
+    "amount": 2000,
+    "currency": "ARS",
+    "category": "transporte",
+    "description": "Recarga SUBE",
+    "merchant": "SUBE"
+  },
+  {
+    "id": "txn_003",
+    "date": "2026-05-07",
+    "amount": 38500,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Supermercado semanal",
+    "merchant": "Coto"
+  },
+  {
+    "id": "txn_004",
+    "date": "2026-05-07",
+    "amount": 5200,
+    "currency": "ARS",
+    "category": "transporte",
+    "description": "Viaje al centro",
+    "merchant": "Uber"
+  },
+  {
+    "id": "txn_005",
+    "date": "2026-05-06",
+    "amount": 4200,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Cafe de la manana",
+    "merchant": "Starbucks"
+  },
+  {
+    "id": "txn_006",
+    "date": "2026-05-06",
+    "amount": 8900,
+    "currency": "ARS",
+    "category": "salud",
+    "description": "Medicamentos",
+    "merchant": "Farmacity"
+  },
+  {
+    "id": "txn_007",
+    "date": "2026-05-05",
+    "amount": 45000,
+    "currency": "ARS",
+    "category": "otros",
+    "description": "Auriculares bluetooth",
+    "merchant": "Mercado Libre"
+  },
+  {
+    "id": "txn_008",
+    "date": "2026-05-05",
+    "amount": 5499,
+    "currency": "ARS",
+    "category": "entretenimiento",
+    "description": "Suscripcion mensual",
+    "merchant": "Netflix"
+  },
+  {
+    "id": "txn_009",
+    "date": "2026-05-04",
+    "amount": 6800,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Cena delivery",
+    "merchant": "PedidosYa"
+  },
+  {
+    "id": "txn_010",
+    "date": "2026-05-04",
+    "amount": 18000,
+    "currency": "ARS",
+    "category": "transporte",
+    "description": "Carga de nafta",
+    "merchant": "YPF"
+  },
+  {
+    "id": "txn_011",
+    "date": "2026-05-03",
+    "amount": 4100,
+    "currency": "ARS",
+    "category": "transporte",
+    "description": "Viaje a Palermo",
+    "merchant": "Cabify"
+  },
+  {
+    "id": "txn_012",
+    "date": "2026-05-03",
+    "amount": 3499,
+    "currency": "ARS",
+    "category": "entretenimiento",
+    "description": "Suscripcion mensual",
+    "merchant": "Spotify"
+  },
+  {
+    "id": "txn_013",
+    "date": "2026-05-02",
+    "amount": 75000,
+    "currency": "ARS",
+    "category": "salud",
+    "description": "Prepaga mensual",
+    "merchant": "Galeno"
+  },
+  {
+    "id": "txn_014",
+    "date": "2026-05-01",
+    "amount": 250000,
+    "currency": "ARS",
+    "category": "otros",
+    "description": "Alquiler mayo",
+    "merchant": "Propietario"
+  },
+  {
+    "id": "txn_015",
+    "date": "2026-05-01",
+    "amount": 28500,
+    "currency": "ARS",
+    "category": "servicios",
+    "description": "Factura de luz",
+    "merchant": "Edenor"
+  },
+  {
+    "id": "txn_016",
+    "date": "2026-04-30",
+    "amount": 18900,
+    "currency": "ARS",
+    "category": "servicios",
+    "description": "Plan celular",
+    "merchant": "Personal"
+  },
+  {
+    "id": "txn_017",
+    "date": "2026-04-29",
+    "amount": 16500,
+    "currency": "ARS",
+    "category": "servicios",
+    "description": "Internet hogar",
+    "merchant": "Movistar"
+  },
+  {
+    "id": "txn_018",
+    "date": "2026-04-29",
+    "amount": 22300,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Compra semanal",
+    "merchant": "Carrefour"
+  },
+  {
+    "id": "txn_019",
+    "date": "2026-04-28",
+    "amount": 35000,
+    "currency": "ARS",
+    "category": "educacion",
+    "description": "Curso de TypeScript",
+    "merchant": "Coderhouse"
+  },
+  {
+    "id": "txn_020",
+    "date": "2026-04-28",
+    "amount": 3200,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Cafe y alfajores",
+    "merchant": "Havanna"
+  },
+  {
+    "id": "txn_021",
+    "date": "2026-04-27",
+    "amount": 12000,
+    "currency": "ARS",
+    "category": "entretenimiento",
+    "description": "Entradas cine",
+    "merchant": "Hoyts"
+  },
+  {
+    "id": "txn_022",
+    "date": "2026-04-26",
+    "amount": 8400,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Compra rapida",
+    "merchant": "Dia"
+  },
+  {
+    "id": "txn_023",
+    "date": "2026-04-25",
+    "amount": 22000,
+    "currency": "ARS",
+    "category": "salud",
+    "description": "Gimnasio mensual",
+    "merchant": "SportClub"
+  },
+  {
+    "id": "txn_024",
+    "date": "2026-04-24",
+    "amount": 3800,
+    "currency": "ARS",
+    "category": "transporte",
+    "description": "Viaje corto",
+    "merchant": "Uber"
+  },
+  {
+    "id": "txn_025",
+    "date": "2026-04-23",
+    "amount": 5200,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Cena en casa",
+    "merchant": "Rappi"
+  },
+  {
+    "id": "txn_026",
+    "date": "2026-04-22",
+    "amount": 12500,
+    "currency": "ARS",
+    "category": "otros",
+    "description": "Cargador laptop",
+    "merchant": "Mercado Libre"
+  },
+  {
+    "id": "txn_027",
+    "date": "2026-04-21",
+    "amount": 9500,
+    "currency": "ARS",
+    "category": "servicios",
+    "description": "Factura de agua",
+    "merchant": "AySA"
+  },
+  {
+    "id": "txn_028",
+    "date": "2026-04-20",
+    "amount": 14200,
+    "currency": "ARS",
+    "category": "servicios",
+    "description": "Factura de gas",
+    "merchant": "Metrogas"
+  },
+  {
+    "id": "txn_029",
+    "date": "2026-04-19",
+    "amount": 6500,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Almuerzo rapido",
+    "merchant": "McDonalds"
+  },
+  {
+    "id": "txn_030",
+    "date": "2026-04-18",
+    "amount": 4500,
+    "currency": "ARS",
+    "category": "transporte",
+    "description": "Vuelta a casa",
+    "merchant": "Cabify"
+  },
+  {
+    "id": "txn_031",
+    "date": "2026-04-17",
+    "amount": 4999,
+    "currency": "ARS",
+    "category": "entretenimiento",
+    "description": "Suscripcion mensual",
+    "merchant": "Disney+"
+  },
+  {
+    "id": "txn_032",
+    "date": "2026-04-16",
+    "amount": 5400,
+    "currency": "ARS",
+    "category": "salud",
+    "description": "Vitaminas",
+    "merchant": "Farmacity"
+  },
+  {
+    "id": "txn_033",
+    "date": "2026-04-15",
+    "amount": 4500,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Almuerzo",
+    "merchant": "Rappi"
+  },
+  {
+    "id": "txn_034",
+    "date": "2026-04-14",
+    "amount": 3000,
+    "currency": "ARS",
+    "category": "transporte",
+    "description": "Recarga SUBE",
+    "merchant": "SUBE"
+  },
+  {
+    "id": "txn_035",
+    "date": "2026-04-13",
+    "amount": 19990,
+    "currency": "ARS",
+    "category": "educacion",
+    "description": "Plan anual cuota",
+    "merchant": "Platzi"
+  },
+  {
+    "id": "txn_036",
+    "date": "2026-04-12",
+    "amount": 28900,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Compra grande",
+    "merchant": "Jumbo"
+  },
+  {
+    "id": "txn_037",
+    "date": "2026-04-11",
+    "amount": 5800,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Sushi delivery",
+    "merchant": "PedidosYa"
+  },
+  {
+    "id": "txn_038",
+    "date": "2026-04-10",
+    "amount": 16500,
+    "currency": "ARS",
+    "category": "transporte",
+    "description": "Carga de nafta",
+    "merchant": "Shell"
+  },
+  {
+    "id": "txn_039",
+    "date": "2026-04-09",
+    "amount": 1500,
+    "currency": "ARS",
+    "category": "otros",
+    "description": "Transferencia amigo",
+    "merchant": "Mercado Pago"
+  },
+  {
+    "id": "txn_040",
+    "date": "2026-04-08",
+    "amount": 3800,
+    "currency": "ARS",
+    "category": "comida",
+    "description": "Cafe",
+    "merchant": "Starbucks"
+  },
+  {
+    "id": "txn_041",
+    "date": "2026-04-07",
+    "amount": 8900,
+    "currency": "ARS",
+    "category": "otros",
+    "description": "Cable HDMI",
+    "merchant": "Mercado Libre"
+  },
+  {
+    "id": "txn_042",
+    "date": "2026-04-06",
+    "amount": 18900,
+    "currency": "ARS",
+    "category": "servicios",
+    "description": "Plan celular",
+    "merchant": "Personal"
+  },
+  {
+    "id": "txn_043",
+    "date": "2026-04-05",
+    "amount": 16500,
+    "currency": "ARS",
+    "category": "servicios",
+    "description": "Internet hogar",
+    "merchant": "Movistar"
+  },
+  {
+    "id": "txn_044",
+    "date": "2026-04-04",
+    "amount": 5499,
+    "currency": "ARS",
+    "category": "entretenimiento",
+    "description": "Suscripcion mensual",
+    "merchant": "Netflix"
+  },
+  {
+    "id": "txn_045",
+    "date": "2026-04-03",
+    "amount": 3499,
+    "currency": "ARS",
+    "category": "entretenimiento",
+    "description": "Suscripcion mensual",
+    "merchant": "Spotify"
+  },
+  {
+    "id": "txn_046",
+    "date": "2026-04-02",
+    "amount": 26800,
+    "currency": "ARS",
+    "category": "servicios",
+    "description": "Factura de luz",
+    "merchant": "Edenor"
+  },
+  {
+    "id": "txn_047",
+    "date": "2026-04-01",
+    "amount": 250000,
+    "currency": "ARS",
+    "category": "otros",
+    "description": "Alquiler abril",
+    "merchant": "Propietario"
+  },
+  {
+    "id": "txn_048",
+    "date": "2026-03-30",
+    "amount": 22000,
+    "currency": "ARS",
+    "category": "salud",
+    "description": "Gimnasio mensual",
+    "merchant": "SportClub"
+  },
+  {
+    "id": "txn_049",
+    "date": "2026-03-28",
+    "amount": 4500,
+    "currency": "ARS",
+    "category": "otros",
+    "description": "Comision mantenimiento cuenta",
+    "merchant": "Galicia"
+  },
+  {
+    "id": "txn_050",
+    "date": "2026-03-15",
+    "amount": 18500,
+    "currency": "ARS",
+    "category": "educacion",
+    "description": "Libros",
+    "merchant": "Cuspide"
+  }
+]

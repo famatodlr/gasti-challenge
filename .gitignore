@@ -1,0 +1,36 @@
+# deps
+node_modules/
+
+# turbo / next / nest / mastra build outputs
+.turbo/
+.next/
+.mastra/
+dist/
+build/
+out/
+
+# env (NUNCA commitear keys)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+
+# coverage / cache
+coverage/
+.cache/
+*.tsbuildinfo
+next-env.d.ts
