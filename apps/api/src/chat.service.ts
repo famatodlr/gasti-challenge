@@ -1,4 +1,12 @@
-import { Inject, Injectable, InternalServerErrorException, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { gastiFinanceAgent } from 'ai/mastra';
 
 type AgentGenerateOptions = {
@@ -28,8 +36,22 @@ type SerializedAgentError = {
 
 const MAX_CAUSE_DEPTH = 2;
 const REDACTED_SECRET = '[REDACTED]';
+const PROVIDER_QUOTA_EXCEEDED_MESSAGE = 'The AI provider quota was exceeded. Please try again later.';
 const INVALID_TOOL_ARGUMENT_NAME_SIGNALS = ['AI_InvalidToolArgumentsError', 'AI_TypeValidationError'];
 const INVALID_TOOL_ARGUMENT_MESSAGE_SIGNALS = ['Invalid arguments for tool', 'Type validation failed'];
+const PROVIDER_QUOTA_NAME_SIGNALS = ['AI_RetryError'];
+const PROVIDER_QUOTA_MESSAGE_SIGNALS = [
+  'exceeded your current quota',
+  'Quota exceeded',
+  'rate limit',
+  'rate-limit',
+  'RESOURCE_EXHAUSTED',
+];
+
+type SerializeAgentErrorOptions = {
+  includeStack?: boolean;
+  maxCauseDepth?: number;
+};
 
 function redactSecrets(value: string | undefined): string | undefined {
   if (!value) {
@@ -79,22 +101,28 @@ function readCause(value: object): unknown {
   return (value as { cause?: unknown }).cause;
 }
 
-function serializeAgentError(error: unknown, depth = 0): SerializedAgentError | string {
+function serializeAgentError(
+  error: unknown,
+  depth = 0,
+  options: SerializeAgentErrorOptions = {},
+): SerializedAgentError | string {
   if (typeof error !== 'object' || error === null) {
     return redactSecrets(String(error)) ?? '';
   }
 
+  const includeStack = options.includeStack ?? true;
+  const maxCauseDepth = options.maxCauseDepth ?? MAX_CAUSE_DEPTH;
   const serialized: SerializedAgentError = {
     name: readStringProperty(error, 'name'),
     message: readStringProperty(error, 'message'),
-    stack: readStringProperty(error, 'stack'),
+    stack: includeStack ? readStringProperty(error, 'stack') : undefined,
   };
 
   const cause = readCause(error);
 
   if (cause !== undefined) {
     serialized.cause =
-      depth >= MAX_CAUSE_DEPTH ? '[Cause depth limit reached]' : serializeAgentError(cause, depth + 1);
+      depth >= maxCauseDepth ? '[Cause depth limit reached]' : serializeAgentError(cause, depth + 1, options);
   }
 
   if (!serialized.name && !serialized.message && !serialized.stack && !serialized.cause) {
@@ -106,6 +134,15 @@ function serializeAgentError(error: unknown, depth = 0): SerializedAgentError | 
 
 function matchesAnySignal(value: string | undefined, signals: readonly string[]): boolean {
   return Boolean(value && signals.some((signal) => value.includes(signal)));
+}
+
+function matchesAnySignalCaseInsensitive(value: string | undefined, signals: readonly string[]): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const normalizedValue = value.toLocaleLowerCase();
+  return signals.some((signal) => normalizedValue.includes(signal.toLocaleLowerCase()));
 }
 
 function isInvalidToolArgumentsError(error: unknown, depth = 0): boolean {
@@ -130,6 +167,62 @@ function isInvalidToolArgumentsError(error: unknown, depth = 0): boolean {
   }
 
   return isInvalidToolArgumentsError(cause, depth + 1);
+}
+
+function isTooManyRequestsStatus(value: unknown): boolean {
+  return value === HttpStatus.TOO_MANY_REQUESTS || value === String(HttpStatus.TOO_MANY_REQUESTS);
+}
+
+function objectHasTooManyRequestsStatus(value: object): boolean {
+  const record = value as Record<string, unknown>;
+  const response = record.response;
+
+  if (isTooManyRequestsStatus(record.status) || isTooManyRequestsStatus(record.statusCode)) {
+    return true;
+  }
+
+  if (typeof response === 'object' && response !== null) {
+    const responseRecord = response as Record<string, unknown>;
+    return isTooManyRequestsStatus(responseRecord.status) || isTooManyRequestsStatus(responseRecord.statusCode);
+  }
+
+  return false;
+}
+
+function objectHasProviderQuotaCode(value: object): boolean {
+  const code = (value as Record<string, unknown>).code;
+
+  if (isTooManyRequestsStatus(code)) {
+    return true;
+  }
+
+  return typeof code === 'string' && code.toLocaleUpperCase() === 'RESOURCE_EXHAUSTED';
+}
+
+function isProviderQuotaError(error: unknown, depth = 0): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return matchesAnySignalCaseInsensitive(String(error), PROVIDER_QUOTA_MESSAGE_SIGNALS);
+  }
+
+  const name = (error as { name?: unknown }).name;
+  const message = (error as { message?: unknown }).message;
+
+  if (
+    matchesAnySignal(typeof name === 'string' ? name : undefined, PROVIDER_QUOTA_NAME_SIGNALS) ||
+    matchesAnySignalCaseInsensitive(typeof message === 'string' ? message : undefined, PROVIDER_QUOTA_MESSAGE_SIGNALS) ||
+    objectHasTooManyRequestsStatus(error) ||
+    objectHasProviderQuotaCode(error)
+  ) {
+    return true;
+  }
+
+  const cause = readCause(error);
+
+  if (cause === undefined || depth >= MAX_CAUSE_DEPTH) {
+    return false;
+  }
+
+  return isProviderQuotaError(cause, depth + 1);
 }
 
 function createInvalidToolArgumentsRetryMessage(message: string): string {
@@ -179,8 +272,14 @@ export class ChatService {
         try {
           return await this.generateAnswer(createInvalidToolArgumentsRetryMessage(message), 2);
         } catch (retryError) {
+          if (isProviderQuotaError(retryError)) {
+            this.throwProviderQuotaExceeded(retryError);
+          }
+
           this.logAgentGenerationFailure(retryError);
         }
+      } else if (isProviderQuotaError(error)) {
+        this.throwProviderQuotaExceeded(error);
       } else {
         this.logAgentGenerationFailure(error);
       }
@@ -219,5 +318,17 @@ export class ChatService {
       message: 'Agent generation failed',
       error: serializeAgentError(error),
     });
+  }
+
+  private throwProviderQuotaExceeded(error: unknown): never {
+    this.logger.warn({
+      event: 'chat.provider_quota_exceeded',
+      message: 'AI provider quota exceeded',
+      provider: 'gemini',
+      retryable: true,
+      error: serializeAgentError(error, 0, { includeStack: false, maxCauseDepth: 1 }),
+    });
+
+    throw new HttpException(PROVIDER_QUOTA_EXCEEDED_MESSAGE, HttpStatus.TOO_MANY_REQUESTS);
   }
 }

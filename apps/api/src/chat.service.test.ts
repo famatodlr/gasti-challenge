@@ -1,8 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { InternalServerErrorException, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  InternalServerErrorException,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 import { ChatService } from './chat.service.ts';
+
+const PROVIDER_QUOTA_MESSAGE = 'The AI provider quota was exceeded. Please try again later.';
 
 function silenceInfoLogs(): () => void {
   const originalLoggerLog = Logger.prototype.log;
@@ -11,6 +19,20 @@ function silenceInfoLogs(): () => void {
   return () => {
     Logger.prototype.log = originalLoggerLog;
   };
+}
+
+function assertProviderQuotaException(error: unknown): boolean {
+  assert.ok(error instanceof HttpException);
+  assert.equal(error.getStatus(), HttpStatus.TOO_MANY_REQUESTS);
+
+  const response = error.getResponse();
+  if (typeof response === 'string') {
+    assert.equal(response, PROVIDER_QUOTA_MESSAGE);
+  } else {
+    assert.equal((response as { message: string }).message, PROVIDER_QUOTA_MESSAGE);
+  }
+
+  return true;
 }
 
 test('ChatService invokes the finance agent with the user message', async () => {
@@ -247,6 +269,151 @@ test('ChatService does not retry non-tool generation failures', async () => {
     assert.equal(loggedErrors.length, 1);
     assert.equal((loggedErrors[0][0] as { event: string }).event, 'chat.agent_generation_failed');
   } finally {
+    Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
+
+    if (previousKey === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = previousKey;
+    }
+  }
+});
+
+test('ChatService maps provider quota failures to Too Many Requests without retrying', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = 'test-key';
+
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  const originalLoggerError = Logger.prototype.error;
+  const loggedWarnings: unknown[][] = [];
+  const loggedErrors: unknown[][] = [];
+  Logger.prototype.warn = function (...args: unknown[]) {
+    loggedWarnings.push(args);
+  };
+  Logger.prototype.error = function (...args: unknown[]) {
+    loggedErrors.push(args);
+  };
+
+  try {
+    let calls = 0;
+    const quotaError = new Error('You exceeded your current quota, please check your plan and billing details.');
+    quotaError.name = 'AI_RetryError';
+    const service = new ChatService({
+      generate: async () => {
+        calls += 1;
+        throw quotaError;
+      },
+    });
+
+    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+
+    assert.equal(calls, 1);
+    assert.equal(loggedWarnings.length, 1);
+    assert.equal((loggedWarnings[0][0] as { event: string }).event, 'chat.provider_quota_exceeded');
+    assert.equal(
+      loggedWarnings.some(([payload]) => (payload as { event: string }).event === 'chat.agent_generation_retrying'),
+      false,
+    );
+    assert.equal(loggedErrors.length, 0);
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
+    Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
+
+    if (previousKey === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = previousKey;
+    }
+  }
+});
+
+test('ChatService detects provider quota failures from nested causes', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = 'test-key';
+
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  const originalLoggerError = Logger.prototype.error;
+  const loggedWarnings: unknown[][] = [];
+  Logger.prototype.warn = function (...args: unknown[]) {
+    loggedWarnings.push(args);
+  };
+  Logger.prototype.error = function () {};
+
+  try {
+    const quotaCause = new Error('Quota exceeded for metric GenerateContent request count');
+    quotaCause.name = 'AI_RetryError';
+    const providerError = new Error('Gemini provider request failed', { cause: quotaCause });
+    const service = new ChatService({
+      generate: async () => {
+        throw providerError;
+      },
+    });
+
+    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+
+    assert.equal(loggedWarnings.length, 1);
+    assert.equal((loggedWarnings[0][0] as { event: string }).event, 'chat.provider_quota_exceeded');
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
+    Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
+
+    if (previousKey === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = previousKey;
+    }
+  }
+});
+
+test('ChatService maps quota failures during the invalid-tool retry to Too Many Requests', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = 'test-key';
+
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  const originalLoggerError = Logger.prototype.error;
+  const loggedWarnings: unknown[][] = [];
+  const loggedErrors: unknown[][] = [];
+  Logger.prototype.warn = function (...args: unknown[]) {
+    loggedWarnings.push(args);
+  };
+  Logger.prototype.error = function (...args: unknown[]) {
+    loggedErrors.push(args);
+  };
+
+  try {
+    let calls = 0;
+    const invalidToolError = new Error('Invalid arguments for tool spendingSummaryTool');
+    invalidToolError.name = 'AI_InvalidToolArgumentsError';
+    const quotaError = new Error('RESOURCE_EXHAUSTED: rate limit reached');
+
+    const service = new ChatService({
+      generate: async () => {
+        calls += 1;
+
+        if (calls === 1) {
+          throw invalidToolError;
+        }
+
+        throw quotaError;
+      },
+    });
+
+    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+
+    assert.equal(calls, 2);
+    assert.deepEqual(
+      loggedWarnings.map(([payload]) => (payload as { event: string }).event),
+      ['chat.agent_generation_retrying', 'chat.provider_quota_exceeded'],
+    );
+    assert.equal(loggedErrors.length, 0);
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
     Logger.prototype.error = originalLoggerError;
     restoreLoggerLog();
 
