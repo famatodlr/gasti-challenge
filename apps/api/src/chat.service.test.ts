@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ServiceUnavailableException } from '@nestjs/common';
+import { InternalServerErrorException, Logger, ServiceUnavailableException } from '@nestjs/common';
 
 import { ChatService } from './chat.service.ts';
 
@@ -77,6 +77,61 @@ test('ChatService ignores the provider-specific legacy key when GEMINI_API_KEY i
       delete process.env[legacyGoogleKey];
     } else {
       process.env[legacyGoogleKey] = previousGoogleKey;
+    }
+  }
+});
+
+test('ChatService logs agent generation failures without changing the public error', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  const fakeKey = 'fake-gemini-secret';
+  process.env.GEMINI_API_KEY = fakeKey;
+
+  const originalLoggerError = Logger.prototype.error;
+  const loggedErrors: unknown[][] = [];
+  Logger.prototype.error = function (...args: unknown[]) {
+    loggedErrors.push(args);
+  };
+
+  try {
+    const cause = new Error(`Provider rejected key ${fakeKey}`);
+    const agentError = new Error(`Gemini request failed with ${fakeKey}`, { cause });
+    const service = new ChatService({
+      generate: async () => {
+        throw agentError;
+      },
+    });
+
+    await assert.rejects(() => service.answer('Cuanto gaste?'), {
+      constructor: InternalServerErrorException,
+      message: 'Failed to generate a chat answer.',
+    });
+
+    assert.equal(loggedErrors.length, 1);
+    const [payload] = loggedErrors[0];
+    assert.equal((payload as { event: string }).event, 'chat.agent_generation_failed');
+    assert.equal((payload as { error: { name: string } }).error.name, 'Error');
+    assert.equal(
+      (payload as { error: { message: string } }).error.message,
+      'Gemini request failed with [REDACTED]',
+    );
+    assert.equal((payload as { error: { cause: { name: string } } }).error.cause.name, 'Error');
+    assert.equal(
+      (payload as { error: { cause: { message: string } } }).error.cause.message,
+      'Provider rejected key [REDACTED]',
+    );
+    assert.equal(JSON.stringify(payload).includes(fakeKey), false);
+    assert.match((payload as { error: { stack: string } }).error.stack, /Gemini request failed/);
+    assert.match(
+      (payload as { error: { cause: { stack: string } } }).error.cause.stack,
+      /Provider rejected key/,
+    );
+  } finally {
+    Logger.prototype.error = originalLoggerError;
+
+    if (previousKey === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = previousKey;
     }
   }
 });
