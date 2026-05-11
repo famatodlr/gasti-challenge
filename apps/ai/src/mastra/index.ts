@@ -1,6 +1,8 @@
 import { Mastra } from '@mastra/core';
-import { placeholderAgent } from './agents';
+import { gastiFinanceAgent } from './agents/index.ts';
 
-export const mastra = new Mastra({
-  agents: { placeholderAgent },
+export { financeTools, gastiFinanceAgent, getGastiModelId } from './agents/index.ts';
+
+export const mastra: Mastra = new Mastra({
+  agents: { gastiFinanceAgent },
 });

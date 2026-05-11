@@ -3,15 +3,23 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./mastra": {
+      "types": "./dist/mastra/index.d.ts",
+      "import": "./dist/mastra/index.js"
+    }
+  },
   "scripts": {
     "dev": "mastra dev",
-    "build": "mastra build",
+    "build": "bun run build:package && mastra build",
+    "build:package": "tsc -p tsconfig.build.json",
+    "test:agents": "bun test src/mastra/agents/*.test.ts",
     "test:domain": "bun test src/mastra/domain/analytics.test.ts",
     "test:tools": "bun test src/mastra/tools/finance-tools.test.ts",
     "verify:domain": "node src/mastra/domain/verify-analytics.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^1.0.11",
+    "@ai-sdk/google": "^1.2.22",
     "@mastra/core": "^0.10.0",
     "mastra": "^0.4.0",
     "zod": "^3.23.8"

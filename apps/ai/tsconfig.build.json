@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false,
+    "declaration": true,
+    "sourceMap": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src/mastra/**/*.ts"],
+  "exclude": ["node_modules", "dist", ".mastra", "**/*.test.ts", "src/mastra/domain/verify-analytics.ts"]
+}
