@@ -158,17 +158,26 @@ export class ChatService {
       throw new ServiceUnavailableException('GEMINI_API_KEY is required to use the chat endpoint.');
     }
 
+    this.logger.log({
+      event: 'chat.request_received',
+      message: 'Chat request received',
+      messageLength: message.length,
+    });
+
     try {
-      return await this.generateAnswer(message);
+      return await this.generateAnswer(message, 1);
     } catch (error) {
       if (isInvalidToolArgumentsError(error)) {
         this.logger.warn({
           event: 'chat.agent_generation_retrying',
+          message: 'Invalid tool arguments detected, retrying once',
+          attempt: 1,
+          nextAttempt: 2,
           error: serializeAgentError(error),
         });
 
         try {
-          return await this.generateAnswer(createInvalidToolArgumentsRetryMessage(message));
+          return await this.generateAnswer(createInvalidToolArgumentsRetryMessage(message), 2);
         } catch (retryError) {
           this.logAgentGenerationFailure(retryError);
         }
@@ -180,12 +189,26 @@ export class ChatService {
     }
   }
 
-  private async generateAnswer(message: string): Promise<string> {
+  private async generateAnswer(message: string, attempt: number): Promise<string> {
+    this.logger.log({
+      event: 'chat.agent_generation_started',
+      message: 'Agent generation started',
+      attempt,
+      messageLength: message.length,
+    });
+
     const result = await this.agent.generate(message, { maxSteps: 5 });
 
     if (!result.text.trim()) {
       throw new Error('Agent returned an empty answer.');
     }
+
+    this.logger.log({
+      event: 'chat.agent_response_generated',
+      message: 'Agent response generated',
+      attempt,
+      responseLength: result.text.length,
+    });
 
     return result.text;
   }
@@ -193,6 +216,7 @@ export class ChatService {
   private logAgentGenerationFailure(error: unknown): void {
     this.logger.error({
       event: 'chat.agent_generation_failed',
+      message: 'Agent generation failed',
       error: serializeAgentError(error),
     });
   }

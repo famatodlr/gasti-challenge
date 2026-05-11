@@ -4,9 +4,19 @@ import { InternalServerErrorException, Logger, ServiceUnavailableException } fro
 
 import { ChatService } from './chat.service.ts';
 
+function silenceInfoLogs(): () => void {
+  const originalLoggerLog = Logger.prototype.log;
+  Logger.prototype.log = function () {};
+
+  return () => {
+    Logger.prototype.log = originalLoggerLog;
+  };
+}
+
 test('ChatService invokes the finance agent with the user message', async () => {
   const previousKey = process.env.GEMINI_API_KEY;
   process.env.GEMINI_API_KEY = 'test-key';
+  const restoreLoggerLog = silenceInfoLogs();
 
   try {
     const service = new ChatService({
@@ -25,6 +35,8 @@ test('ChatService invokes the finance agent with the user message', async () => 
     } else {
       process.env.GEMINI_API_KEY = previousKey;
     }
+
+    restoreLoggerLog();
   }
 });
 
@@ -86,6 +98,7 @@ test('ChatService logs agent generation failures without changing the public err
   const fakeKey = 'fake-gemini-secret';
   process.env.GEMINI_API_KEY = fakeKey;
 
+  const restoreLoggerLog = silenceInfoLogs();
   const originalLoggerError = Logger.prototype.error;
   const loggedErrors: unknown[][] = [];
   Logger.prototype.error = function (...args: unknown[]) {
@@ -130,6 +143,7 @@ test('ChatService logs agent generation failures without changing the public err
     );
   } finally {
     Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
 
     if (previousKey === undefined) {
       delete process.env.GEMINI_API_KEY;
@@ -143,6 +157,7 @@ test('ChatService retries invalid tool argument failures once with corrective in
   const previousKey = process.env.GEMINI_API_KEY;
   process.env.GEMINI_API_KEY = 'test-key';
 
+  const restoreLoggerLog = silenceInfoLogs();
   const originalLoggerWarn = Logger.prototype.warn;
   const originalLoggerError = Logger.prototype.error;
   const loggedWarnings: unknown[][] = [];
@@ -194,6 +209,7 @@ test('ChatService retries invalid tool argument failures once with corrective in
   } finally {
     Logger.prototype.warn = originalLoggerWarn;
     Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
 
     if (previousKey === undefined) {
       delete process.env.GEMINI_API_KEY;
@@ -207,6 +223,7 @@ test('ChatService does not retry non-tool generation failures', async () => {
   const previousKey = process.env.GEMINI_API_KEY;
   process.env.GEMINI_API_KEY = 'test-key';
 
+  const restoreLoggerLog = silenceInfoLogs();
   const originalLoggerError = Logger.prototype.error;
   const loggedErrors: unknown[][] = [];
   Logger.prototype.error = function (...args: unknown[]) {
@@ -231,6 +248,7 @@ test('ChatService does not retry non-tool generation failures', async () => {
     assert.equal((loggedErrors[0][0] as { event: string }).event, 'chat.agent_generation_failed');
   } finally {
     Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
 
     if (previousKey === undefined) {
       delete process.env.GEMINI_API_KEY;
@@ -244,6 +262,7 @@ test('ChatService returns the public error when the invalid-tool retry also fail
   const previousKey = process.env.GEMINI_API_KEY;
   process.env.GEMINI_API_KEY = 'test-key';
 
+  const restoreLoggerLog = silenceInfoLogs();
   const originalLoggerWarn = Logger.prototype.warn;
   const originalLoggerError = Logger.prototype.error;
   const loggedWarnings: unknown[][] = [];
@@ -285,6 +304,7 @@ test('ChatService returns the public error when the invalid-tool retry also fail
   } finally {
     Logger.prototype.warn = originalLoggerWarn;
     Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
 
     if (previousKey === undefined) {
       delete process.env.GEMINI_API_KEY;
