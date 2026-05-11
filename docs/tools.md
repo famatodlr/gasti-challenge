@@ -12,7 +12,8 @@ Shared conventions:
 - Amounts are positive integer pesos for expenses.
 - Tool outputs include enough transaction IDs for the agent to cite evidence.
 - Tools perform deterministic data work; the agent turns results into conversation.
-- No tool calls live APIs in the challenge version. All data comes from `data/transactions.json`.
+- No tool calls live APIs in the challenge version. All raw data comes from `data/transactions.json`.
+- The raw file keeps original broad categories. Tools expose normalized finance categories and keep the original value as `rawCategory` on transaction rows.
 
 Shared schema sketches:
 
@@ -21,6 +22,16 @@ const dateRangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
+
+const rawCategorySchema = z.enum([
+  "comida",
+  "transporte",
+  "salud",
+  "otros",
+  "entretenimiento",
+  "servicios",
+  "educacion",
+]);
 
 const categorySchema = z.enum([
   "vivienda",
@@ -41,6 +52,7 @@ const transactionSchema = z.object({
   amount: z.number(),
   currency: z.literal("ARS"),
   category: categorySchema,
+  rawCategory: rawCategorySchema,
   description: z.string(),
   merchant: z.string(),
 });
@@ -264,4 +276,3 @@ This is not required for the base implementation. If there is time, create a Mas
 - "Haceme un resumen del mes"
 - "Dame un chequeo financiero rapido"
 - "Que tendria que mirar esta semana?"
-

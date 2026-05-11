@@ -3,7 +3,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 
-import { sortTransactionsAscending, type Transaction, transactionsSchema } from './transaction.ts';
+import {
+  normalizeTransaction,
+  rawTransactionsSchema,
+  sortTransactionsAscending,
+  type Transaction,
+} from './transaction.ts';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultTransactionsPath = resolve(currentDirectory, '../../../../../data/transactions.json');
@@ -18,7 +23,7 @@ export function loadTransactions(path = defaultTransactionsPath): Transaction[] 
   }
 
   try {
-    return [...transactionsSchema.parse(parsedJson)].sort(sortTransactionsAscending);
+    return rawTransactionsSchema.parse(parsedJson).map(normalizeTransaction).sort(sortTransactionsAscending);
   } catch (error) {
     if (error instanceof ZodError) {
       const issues = error.issues.map((issue) => `${issue.path.join('.') || 'root'}: ${issue.message}`).join('; ');

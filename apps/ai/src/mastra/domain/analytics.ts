@@ -161,7 +161,7 @@ export type ForecastMonthEndSpendResult = {
   confidence: Confidence;
 };
 
-const defaultFixedCategories: Category[] = ['servicios', 'entretenimiento'];
+const defaultFixedCategories: Category[] = ['vivienda', 'servicios', 'suscripciones'];
 const fixedMerchantHints = new Set([
   'aysa',
   'disney+',
@@ -176,7 +176,7 @@ const fixedMerchantHints = new Set([
   'spotify',
 ]);
 const forecastFixedMerchantHints = new Set(['propietario']);
-const fixedCategoryHints = new Set<Category>(['servicios', 'entretenimiento']);
+const fixedCategoryHints = new Set<Category>(['vivienda', 'servicios', 'suscripciones']);
 
 export function summarizeSpending(
   transactions: readonly Transaction[],
@@ -522,7 +522,7 @@ function buildRecurringItem(
     occurrences: [...occurrences].sort(sortTransactionsDescending),
     confidence,
     reason: buildRecurringReason(cadence, occurrences.length, amountSimilarity, isFixedHint),
-    possibleZombie: latest.category === 'entretenimiento' && confidence !== 'high',
+    possibleZombie: latest.category === 'suscripciones' && confidence !== 'high',
   };
 }
 
