@@ -14,12 +14,27 @@ AI workspace:
 ```bash
 cd apps/ai
 bun run test:domain
+bun run test:tools
 bun run verify:domain
 bun run build
-bun run dev
 ```
 
-From the repo root, `bun run dev:ai` starts the Mastra dev server for the AI workspace.
+## Validation
+
+Run these commands from `apps/ai` to validate the deterministic finance tools work:
+
+```bash
+bun run test:domain
+bun run test:tools
+bun run verify:domain
+bun run build
+```
+
+The domain analytics tests and finance tool wrapper tests should pass, the domain verifier should print deterministic JSON output, and `bun run build` (`mastra build`) should produce the expected `.mastra/output` artifact.
+
+### Mastra Dev Tooling Note
+
+`bun run dev` from `apps/ai` and `bun run dev:ai` from the repo root currently fail under Bun with a Rollup `commonjs--resolver` read-only property error. This appears to be external Mastra/Bun/Rollup dev-mode tooling version skew, not a Gasti finance logic issue, and it does not block the deterministic finance tools work.
 
 ## Agent Tools
 

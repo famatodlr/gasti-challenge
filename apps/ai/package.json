@@ -7,6 +7,7 @@
     "dev": "mastra dev",
     "build": "mastra build",
     "test:domain": "bun test src/mastra/domain/analytics.test.ts",
+    "test:tools": "bun test src/mastra/tools/finance-tools.test.ts",
     "verify:domain": "node src/mastra/domain/verify-analytics.ts"
   },
   "dependencies": {
