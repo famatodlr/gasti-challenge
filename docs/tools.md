@@ -14,6 +14,7 @@ Shared conventions:
 - Tools perform deterministic data work; the agent turns results into conversation.
 - No tool calls live APIs in the challenge version. All raw data comes from `data/transactions.json`.
 - The raw file keeps original broad categories. Tools expose normalized finance categories and keep the original value as `rawCategory` on transaction rows.
+- Public tool inputs use flat date fields for LLM reliability. Date-bounded tools use top-level `from` and `to`; comparison tools use `currentFrom`, `currentTo`, `baselineFrom`, and `baselineTo`.
 
 Shared schema sketches:
 
@@ -68,13 +69,14 @@ Input:
 
 ```ts
 z.object({
-  dateRange: dateRangeSchema.optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   categories: z.array(categorySchema).optional(),
   merchants: z.array(z.string()).optional(),
   groupBy: z.enum(["category", "merchant", "day", "week"]).default("category"),
   includeTopTransactions: z.boolean().default(true),
   topTransactionLimit: z.number().int().min(1).max(10).default(5),
-})
+}).strict()
 ```
 
 Output:
@@ -108,7 +110,8 @@ Input:
 
 ```ts
 z.object({
-  dateRange: dateRangeSchema.optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   categories: z.array(categorySchema).optional(),
   merchants: z.array(z.string()).optional(),
   query: z.string().optional(),
@@ -116,7 +119,7 @@ z.object({
   maxAmount: z.number().optional(),
   sortBy: z.enum(["date_desc", "amount_desc", "amount_asc"]).default("date_desc"),
   limit: z.number().int().min(1).max(25).default(10),
-})
+}).strict()
 ```
 
 Output:
@@ -142,11 +145,13 @@ Input:
 
 ```ts
 z.object({
-  currentRange: dateRangeSchema,
-  baselineRange: dateRangeSchema,
+  currentFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  currentTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  baselineFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  baselineTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   groupBy: z.enum(["category", "merchant"]).default("category"),
   categories: z.array(categorySchema).optional(),
-})
+}).strict()
 ```
 
 Output:
@@ -192,10 +197,11 @@ Input:
 
 ```ts
 z.object({
-  dateRange: dateRangeSchema.optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   minOccurrences: z.number().int().min(2).max(4).default(2),
   includeVariableRecurring: z.boolean().default(true),
-})
+}).strict()
 ```
 
 Output:

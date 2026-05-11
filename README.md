@@ -118,6 +118,8 @@ These tools are registered on `gastiFinanceAgent`, which is exposed through the 
 - Raw transaction categories are preserved from the dataset. The domain layer normalizes them into 10 product categories for analytics and tool outputs: `vivienda`, `servicios`, `suscripciones`, `supermercado`, `comida_fuera`, `transporte`, `salud`, `educacion`, `compras`, and `ocio`.
 - Transaction tool outputs include both normalized `category` and original `rawCategory`.
 
+- Public tool schemas intentionally use flat date fields to improve LLM tool-calling reliability. Internally, tools adapt those fields back into domain date range objects.
+
 ## Left For Later
 
 - Build the UI chat integration.

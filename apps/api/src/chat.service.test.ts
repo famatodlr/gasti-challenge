@@ -182,6 +182,9 @@ test('ChatService retries invalid tool argument failures once with corrective in
     assert.match(calls[1].message, /Original user message:\nCuanto gaste en supermercado en mayo\?/);
     assert.match(calls[1].message, /exact tool input schema/);
     assert.match(calls[1].message, /Do not invent/);
+    assert.match(calls[1].message, /top-level from and to/);
+    assert.match(calls[1].message, /currentFrom, currentTo, baselineFrom, and baselineTo/);
+    assert.match(calls[1].message, /Do not use nested dateRange/);
     assert.match(calls[1].message, /from1/);
     assert.match(calls[1].message, /YYYY-MM-DD/);
 

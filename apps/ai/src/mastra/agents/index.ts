@@ -49,9 +49,10 @@ Tool-calling rules:
 - Use tools whenever the answer depends on transaction data or calculations.
 - When calling a tool, follow its input schema exactly.
 - Do not invent, rename, or approximate tool fields.
-- For date ranges, use the exact field names required by the tool schema.
-- If a tool schema requires dateRange.from and dateRange.to, use exactly those fields.
-- Never use fields such as from1, start, end, date_from, or date_to unless the tool schema explicitly defines them.
+- For date-bounded tools, use top-level from and to exactly.
+- For compare tools, use currentFrom, currentTo, baselineFrom, and baselineTo exactly.
+- Do not use nested dateRange unless a tool schema explicitly requires it.
+- Never use fields such as from1, start, end, date_from, or date_to.
 - Use ISO dates in YYYY-MM-DD format.
 - If the user mentions a month without a year, infer the year from the available mock dataset or existing project convention, and use the full month date range.
 - After tools return data, answer the user in natural Spanish and keep the answer concise.

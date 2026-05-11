@@ -139,9 +139,10 @@ ${message}
 
 Retry the task from scratch. When calling tools, use the exact tool input schema.
 Do not invent, rename, or approximate field names.
-For date ranges, use the exact field names required by the tool schema.
-If the schema requires dateRange.from and dateRange.to, use exactly dateRange.from and dateRange.to.
-Do not use fields such as from1, start, end, date_from, or date_to unless the tool schema explicitly defines them.
+For date-bounded tools, use top-level from and to exactly.
+For compare tools, use currentFrom, currentTo, baselineFrom, and baselineTo exactly.
+Do not use nested dateRange unless the tool schema explicitly requires it.
+Do not use fields such as from1, start, end, date_from, or date_to.
 Use ISO dates in YYYY-MM-DD format.
 After the tool succeeds, return the final user-facing answer in Spanish.`;
 }

@@ -4,16 +4,26 @@ import { z } from 'zod';
 import { comparePeriods } from '../domain/analytics.ts';
 import { loadTransactions } from '../domain/transaction-repository.ts';
 import { categorySchema, dateRangeSchema } from '../domain/transaction.ts';
+import { addDateRangeOrderValidation, compareDateRangeFields, toCompareDateRanges } from './date-input.ts';
+
+const comparePeriodsInputSchema = addDateRangeOrderValidation(
+  z
+    .object({
+      ...compareDateRangeFields,
+      groupBy: z.enum(['category', 'merchant']).default('category'),
+      categories: z.array(categorySchema).optional(),
+    })
+    .strict(),
+  [
+    { fromKey: 'currentFrom', toKey: 'currentTo' },
+    { fromKey: 'baselineFrom', toKey: 'baselineTo' },
+  ],
+);
 
 export const comparePeriodsTool = createTool({
   id: 'comparePeriodsTool',
   description: 'Compare ARS spending between two inclusive date ranges by total, category, or merchant.',
-  inputSchema: z.object({
-    currentRange: dateRangeSchema,
-    baselineRange: dateRangeSchema,
-    groupBy: z.enum(['category', 'merchant']).default('category'),
-    categories: z.array(categorySchema).optional(),
-  }),
+  inputSchema: comparePeriodsInputSchema,
   outputSchema: z.object({
     currency: z.literal('ARS'),
     current: z.object({
@@ -44,5 +54,12 @@ export const comparePeriodsTool = createTool({
     ),
     caveats: z.array(z.string()),
   }),
-  execute: async ({ context }) => comparePeriods(loadTransactions(), context),
+  execute: async ({ context }) => {
+    const { currentFrom, currentTo, baselineFrom, baselineTo, ...input } = context;
+
+    return comparePeriods(loadTransactions(), {
+      ...input,
+      ...toCompareDateRanges({ currentFrom, currentTo, baselineFrom, baselineTo }),
+    });
+  },
 });

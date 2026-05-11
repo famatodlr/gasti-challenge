@@ -4,20 +4,28 @@ import { z } from 'zod';
 import { findTransactions } from '../domain/analytics.ts';
 import { loadTransactions } from '../domain/transaction-repository.ts';
 import { categorySchema, dateRangeSchema, transactionSchema } from '../domain/transaction.ts';
+import { addDateRangeOrderValidation, flatDateRangeFields, toDateRange } from './date-input.ts';
+
+const findTransactionsInputSchema = addDateRangeOrderValidation(
+  z
+    .object({
+      ...flatDateRangeFields,
+      categories: z.array(categorySchema).optional(),
+      merchants: z.array(z.string()).optional(),
+      query: z.string().optional(),
+      minAmount: z.number().optional(),
+      maxAmount: z.number().optional(),
+      sortBy: z.enum(['date_desc', 'amount_desc', 'amount_asc']).default('date_desc'),
+      limit: z.number().int().min(1).max(25).default(10),
+    })
+    .strict(),
+  [{ fromKey: 'from', toKey: 'to' }],
+);
 
 export const findTransactionsTool = createTool({
   id: 'findTransactionsTool',
   description: 'Find exact ARS transaction rows that match date, category, merchant, query, amount, and sorting filters.',
-  inputSchema: z.object({
-    dateRange: dateRangeSchema.optional(),
-    categories: z.array(categorySchema).optional(),
-    merchants: z.array(z.string()).optional(),
-    query: z.string().optional(),
-    minAmount: z.number().optional(),
-    maxAmount: z.number().optional(),
-    sortBy: z.enum(['date_desc', 'amount_desc', 'amount_asc']).default('date_desc'),
-    limit: z.number().int().min(1).max(25).default(10),
-  }),
+  inputSchema: findTransactionsInputSchema,
   outputSchema: z.object({
     period: dateRangeSchema,
     currency: z.literal('ARS'),
@@ -26,5 +34,12 @@ export const findTransactionsTool = createTool({
     transactionCount: z.number(),
     transactions: z.array(transactionSchema),
   }),
-  execute: async ({ context }) => findTransactions(loadTransactions(), context),
+  execute: async ({ context }) => {
+    const { from, to, ...input } = context;
+
+    return findTransactions(loadTransactions(), {
+      ...input,
+      dateRange: toDateRange({ from, to }),
+    });
+  },
 });
