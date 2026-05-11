@@ -28,6 +28,8 @@ type SerializedAgentError = {
 
 const MAX_CAUSE_DEPTH = 2;
 const REDACTED_SECRET = '[REDACTED]';
+const INVALID_TOOL_ARGUMENT_NAME_SIGNALS = ['AI_InvalidToolArgumentsError', 'AI_TypeValidationError'];
+const INVALID_TOOL_ARGUMENT_MESSAGE_SIGNALS = ['Invalid arguments for tool', 'Type validation failed'];
 
 function redactSecrets(value: string | undefined): string | undefined {
   if (!value) {
@@ -102,6 +104,48 @@ function serializeAgentError(error: unknown, depth = 0): SerializedAgentError | 
   return serialized;
 }
 
+function matchesAnySignal(value: string | undefined, signals: readonly string[]): boolean {
+  return Boolean(value && signals.some((signal) => value.includes(signal)));
+}
+
+function isInvalidToolArgumentsError(error: unknown, depth = 0): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return matchesAnySignal(String(error), INVALID_TOOL_ARGUMENT_MESSAGE_SIGNALS);
+  }
+
+  const name = (error as { name?: unknown }).name;
+  const message = (error as { message?: unknown }).message;
+
+  if (
+    matchesAnySignal(typeof name === 'string' ? name : undefined, INVALID_TOOL_ARGUMENT_NAME_SIGNALS) ||
+    matchesAnySignal(typeof message === 'string' ? message : undefined, INVALID_TOOL_ARGUMENT_MESSAGE_SIGNALS)
+  ) {
+    return true;
+  }
+
+  const cause = readCause(error);
+
+  if (cause === undefined || depth >= MAX_CAUSE_DEPTH) {
+    return false;
+  }
+
+  return isInvalidToolArgumentsError(cause, depth + 1);
+}
+
+function createInvalidToolArgumentsRetryMessage(message: string): string {
+  return `The previous attempt failed because a tool call used invalid arguments.
+Original user message:
+${message}
+
+Retry the task from scratch. When calling tools, use the exact tool input schema.
+Do not invent, rename, or approximate field names.
+For date ranges, use the exact field names required by the tool schema.
+If the schema requires dateRange.from and dateRange.to, use exactly dateRange.from and dateRange.to.
+Do not use fields such as from1, start, end, date_from, or date_to unless the tool schema explicitly defines them.
+Use ISO dates in YYYY-MM-DD format.
+After the tool succeeds, return the final user-facing answer in Spanish.`;
+}
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -114,20 +158,41 @@ export class ChatService {
     }
 
     try {
-      const result = await this.agent.generate(message, { maxSteps: 5 });
-
-      if (!result.text.trim()) {
-        throw new Error('Agent returned an empty answer.');
-      }
-
-      return result.text;
+      return await this.generateAnswer(message);
     } catch (error) {
-      this.logger.error({
-        event: 'chat.agent_generation_failed',
-        error: serializeAgentError(error),
-      });
+      if (isInvalidToolArgumentsError(error)) {
+        this.logger.warn({
+          event: 'chat.agent_generation_retrying',
+          error: serializeAgentError(error),
+        });
+
+        try {
+          return await this.generateAnswer(createInvalidToolArgumentsRetryMessage(message));
+        } catch (retryError) {
+          this.logAgentGenerationFailure(retryError);
+        }
+      } else {
+        this.logAgentGenerationFailure(error);
+      }
 
       throw new InternalServerErrorException('Failed to generate a chat answer.');
     }
+  }
+
+  private async generateAnswer(message: string): Promise<string> {
+    const result = await this.agent.generate(message, { maxSteps: 5 });
+
+    if (!result.text.trim()) {
+      throw new Error('Agent returned an empty answer.');
+    }
+
+    return result.text;
+  }
+
+  private logAgentGenerationFailure(error: unknown): void {
+    this.logger.error({
+      event: 'chat.agent_generation_failed',
+      error: serializeAgentError(error),
+    });
   }
 }
