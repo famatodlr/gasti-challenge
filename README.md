@@ -15,7 +15,19 @@ The chat agent uses Google Gemini through AI SDK. Set your Google AI Studio key 
 export GEMINI_API_KEY="your-google-ai-studio-key"
 ```
 
-By default, Gasti uses `gemini-2.5-flash` for development and `gemini-2.5-pro` when `NODE_ENV=production`. Override either with `GASTI_AI_MODEL`.
+By default, Gasti tries Gemini models in this order when quota or rate limits are hit:
+
+1. `gemini-2.5-flash`
+2. `gemini-2.5-pro`
+3. `gemini-2.5-flash-lite`
+
+Override the chain with a comma-separated `GASTI_AI_MODEL_FALLBACK_CHAIN`:
+
+```bash
+export GASTI_AI_MODEL_FALLBACK_CHAIN="gemini-2.5-flash,gemini-2.5-pro,gemini-2.5-flash-lite"
+```
+
+Set `GASTI_AI_MODEL` as a hard override to use exactly one model with no fallback.
 
 AI workspace:
 
@@ -113,7 +125,7 @@ These tools are registered on `gastiFinanceAgent`, which is exposed through the 
 - Deterministic analytics live in `apps/ai/src/mastra/domain`.
 - Mastra tools are thin wrappers: load local data, call analytics, return structured output.
 - The NestJS API stays thin: it validates the chat body, checks `GEMINI_API_KEY`, invokes the Mastra agent, and returns `{ answer }`.
-- Development uses Gemini 2.5 Flash by default; production uses Gemini 2.5 Pro by default.
+- Gemini model selection uses the default fallback chain unless `GASTI_AI_MODEL` hard-overrides it.
 - Challenge data is local-only mock spending data in ARS from `data/transactions.json`.
 - Raw transaction categories are preserved from the dataset. The domain layer normalizes them into 10 product categories for analytics and tool outputs: `vivienda`, `servicios`, `suscripciones`, `supermercado`, `comida_fuera`, `transporte`, `salud`, `educacion`, `compras`, and `ocio`.
 - Transaction tool outputs include both normalized `category` and original `rawCategory`.

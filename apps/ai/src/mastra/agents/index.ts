@@ -1,4 +1,5 @@
 import { Agent } from '@mastra/core/agent';
+import { RuntimeContext } from '@mastra/core/di';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
 import {
@@ -10,7 +11,18 @@ import {
 } from '../tools/index.ts';
 import { getGastiModelId, getGeminiApiKey } from './model.ts';
 
-export { getGastiModelId, getGeminiApiKey } from './model.ts';
+export { getGastiModelFallbackChain, getGastiModelId, getGeminiApiKey } from './model.ts';
+
+const GASTI_MODEL_RUNTIME_CONTEXT_KEY = 'gasti.modelId';
+
+type GenerateGastiFinanceAgentOptions = {
+  maxSteps?: number;
+  modelId?: string;
+};
+
+type GenerateGastiFinanceAgentResult = {
+  text: string;
+};
 
 const google = createGoogleGenerativeAI({
   apiKey: getGeminiApiKey(),
@@ -72,6 +84,24 @@ export const financeTools = {
 export const gastiFinanceAgent = new Agent({
   name: 'Gasti',
   instructions: GASTI_AGENT_INSTRUCTIONS,
-  model: google(getGastiModelId()),
+  model: ({ runtimeContext }) => {
+    const runtimeModel = runtimeContext.get(GASTI_MODEL_RUNTIME_CONTEXT_KEY);
+    const runtimeModelId = typeof runtimeModel === 'string' ? runtimeModel.trim() : '';
+    return google(runtimeModelId || getGastiModelId());
+  },
   tools: financeTools,
 });
+
+export async function generateGastiFinanceAgent(
+  message: string,
+  { maxSteps, modelId }: GenerateGastiFinanceAgentOptions = {},
+): Promise<GenerateGastiFinanceAgentResult> {
+  const runtimeContext = new RuntimeContext();
+  const trimmedModelId = modelId?.trim();
+
+  if (trimmedModelId) {
+    runtimeContext.set(GASTI_MODEL_RUNTIME_CONTEXT_KEY, trimmedModelId);
+  }
+
+  return await gastiFinanceAgent.generate(message, { maxSteps, runtimeContext });
+}

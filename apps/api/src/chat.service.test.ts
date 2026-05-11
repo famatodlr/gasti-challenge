@@ -11,6 +11,48 @@ import {
 import { ChatService } from './chat.service.ts';
 
 const PROVIDER_QUOTA_MESSAGE = 'The AI provider quota was exceeded. Please try again later.';
+const AI_ENV_KEYS = ['GEMINI_API_KEY', 'GASTI_AI_MODEL', 'GASTI_AI_MODEL_FALLBACK_CHAIN'] as const;
+
+type AiEnvKey = (typeof AI_ENV_KEYS)[number];
+
+function restoreAiEnv(snapshot: Record<AiEnvKey, string | undefined>): void {
+  for (const key of AI_ENV_KEYS) {
+    const value = snapshot[key];
+
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function useTestAiEnv(overrides: Partial<Record<AiEnvKey, string | undefined>> = {}): () => void {
+  const snapshot = Object.fromEntries(AI_ENV_KEYS.map((key) => [key, process.env[key]])) as Record<
+    AiEnvKey,
+    string | undefined
+  >;
+
+  process.env.GEMINI_API_KEY = 'test-key';
+  delete process.env.GASTI_AI_MODEL;
+  delete process.env.GASTI_AI_MODEL_FALLBACK_CHAIN;
+
+  for (const key of AI_ENV_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(overrides, key)) {
+      continue;
+    }
+
+    const value = overrides[key];
+
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+
+  return () => restoreAiEnv(snapshot);
+}
 
 function silenceInfoLogs(): () => void {
   const originalLoggerLog = Logger.prototype.log;
@@ -36,8 +78,7 @@ function assertProviderQuotaException(error: unknown): boolean {
 }
 
 test('ChatService invokes the finance agent with the user message', async () => {
-  const previousKey = process.env.GEMINI_API_KEY;
-  process.env.GEMINI_API_KEY = 'test-key';
+  const restoreEnv = useTestAiEnv();
   const restoreLoggerLog = silenceInfoLogs();
 
   try {
@@ -45,6 +86,7 @@ test('ChatService invokes the finance agent with the user message', async () => 
       generate: async (message, options) => {
         assert.equal(message, 'Que gastos fijos tengo?');
         assert.equal(options?.maxSteps, 5);
+        assert.equal(options?.modelId, 'gemini-2.5-flash');
 
         return { text: 'Tenes gastos fijos detectados.' };
       },
@@ -52,13 +94,140 @@ test('ChatService invokes the finance agent with the user message', async () => 
 
     assert.equal(await service.answer('Que gastos fijos tengo?'), 'Tenes gastos fijos detectados.');
   } finally {
-    if (previousKey === undefined) {
-      delete process.env.GEMINI_API_KEY;
-    } else {
-      process.env.GEMINI_API_KEY = previousKey;
-    }
-
+    restoreEnv();
     restoreLoggerLog();
+  }
+});
+
+test('ChatService falls back to the next model on provider quota errors', async () => {
+  const restoreEnv = useTestAiEnv({
+    GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-primary,gemini-secondary,gemini-third',
+  });
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  const loggedWarnings: unknown[][] = [];
+  Logger.prototype.warn = function (...args: unknown[]) {
+    loggedWarnings.push(args);
+  };
+
+  try {
+    const calls: Array<{ message: string; modelId?: string; maxSteps?: number }> = [];
+    const quotaError = new Error('RESOURCE_EXHAUSTED: quota exceeded for GenerateContent');
+    const service = new ChatService({
+      generate: async (message, options) => {
+        calls.push({ message, modelId: options?.modelId, maxSteps: options?.maxSteps });
+
+        if (options?.modelId === 'gemini-primary') {
+          throw quotaError;
+        }
+
+        return { text: 'Respuesta desde fallback.' };
+      },
+    });
+
+    assert.equal(await service.answer('Cuanto gaste?'), 'Respuesta desde fallback.');
+    assert.deepEqual(
+      calls.map((call) => call.modelId),
+      ['gemini-primary', 'gemini-secondary'],
+    );
+    assert.deepEqual(calls.map((call) => call.maxSteps), [5, 5]);
+    assert.deepEqual(
+      loggedWarnings.map(([payload]) => (payload as { event: string }).event),
+      ['chat.model_fallback_retrying'],
+    );
+    assert.equal((loggedWarnings[0][0] as { modelId: string }).modelId, 'gemini-primary');
+    assert.equal((loggedWarnings[0][0] as { nextModelId: string }).nextModelId, 'gemini-secondary');
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService exhausts the fallback chain before returning the public quota error', async () => {
+  const restoreEnv = useTestAiEnv({
+    GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-primary,gemini-secondary',
+  });
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  const originalLoggerError = Logger.prototype.error;
+  const loggedWarnings: unknown[][] = [];
+  const loggedErrors: unknown[][] = [];
+  Logger.prototype.warn = function (...args: unknown[]) {
+    loggedWarnings.push(args);
+  };
+  Logger.prototype.error = function (...args: unknown[]) {
+    loggedErrors.push(args);
+  };
+
+  try {
+    const calls: string[] = [];
+    const service = new ChatService({
+      generate: async (_message, options) => {
+        calls.push(options?.modelId ?? '');
+        throw new Error(`Quota exceeded for ${options?.modelId}`);
+      },
+    });
+
+    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+    assert.deepEqual(calls, ['gemini-primary', 'gemini-secondary']);
+    assert.deepEqual(
+      loggedWarnings.map(([payload]) => (payload as { event: string }).event),
+      ['chat.model_fallback_retrying', 'chat.provider_quota_exceeded'],
+    );
+    assert.equal(loggedErrors.length, 1);
+    assert.equal((loggedErrors[0][0] as { event: string }).event, 'chat.model_fallback_exhausted');
+    assert.match(
+      (loggedErrors[0][0] as { error: { message: string } }).error.message,
+      /All Gemini fallback models were exhausted: gemini-primary, gemini-secondary/,
+    );
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
+    Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService honors GASTI_AI_MODEL as a hard override without fallback', async () => {
+  const restoreEnv = useTestAiEnv({
+    GASTI_AI_MODEL: 'gemini-fixed',
+    GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-primary,gemini-secondary',
+  });
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  const originalLoggerError = Logger.prototype.error;
+  const loggedWarnings: unknown[][] = [];
+  const loggedErrors: unknown[][] = [];
+  Logger.prototype.warn = function (...args: unknown[]) {
+    loggedWarnings.push(args);
+  };
+  Logger.prototype.error = function (...args: unknown[]) {
+    loggedErrors.push(args);
+  };
+
+  try {
+    const calls: string[] = [];
+    const service = new ChatService({
+      generate: async (_message, options) => {
+        calls.push(options?.modelId ?? '');
+        throw new Error('RESOURCE_EXHAUSTED: rate limit reached');
+      },
+    });
+
+    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+    assert.deepEqual(calls, ['gemini-fixed']);
+    assert.deepEqual(
+      loggedWarnings.map(([payload]) => (payload as { event: string }).event),
+      ['chat.provider_quota_exceeded'],
+    );
+    assert.equal(loggedErrors.length, 1);
+    assert.equal((loggedErrors[0][0] as { event: string }).event, 'chat.model_fallback_exhausted');
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
+    Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
+    restoreEnv();
   }
 });
 
@@ -280,9 +449,53 @@ test('ChatService does not retry non-tool generation failures', async () => {
   }
 });
 
-test('ChatService maps provider quota failures to Too Many Requests without retrying', async () => {
-  const previousKey = process.env.GEMINI_API_KEY;
-  process.env.GEMINI_API_KEY = 'test-key';
+test('ChatService does not fallback for AI retry errors without quota signals', async () => {
+  const restoreEnv = useTestAiEnv();
+
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerError = Logger.prototype.error;
+  const originalLoggerWarn = Logger.prototype.warn;
+  const loggedErrors: unknown[][] = [];
+  const loggedWarnings: unknown[][] = [];
+  Logger.prototype.error = function (...args: unknown[]) {
+    loggedErrors.push(args);
+  };
+  Logger.prototype.warn = function (...args: unknown[]) {
+    loggedWarnings.push(args);
+  };
+
+  try {
+    let calls = 0;
+    const retryError = new Error('Model returned invalid output');
+    retryError.name = 'AI_RetryError';
+    const service = new ChatService({
+      generate: async () => {
+        calls += 1;
+        throw retryError;
+      },
+    });
+
+    await assert.rejects(() => service.answer('Cuanto gaste?'), {
+      constructor: InternalServerErrorException,
+      message: 'Failed to generate a chat answer.',
+    });
+    assert.equal(calls, 1);
+    assert.equal(loggedErrors.length, 1);
+    assert.equal((loggedErrors[0][0] as { event: string }).event, 'chat.agent_generation_failed');
+    assert.equal(
+      loggedWarnings.some(([payload]) => (payload as { event: string }).event === 'chat.model_fallback_retrying'),
+      false,
+    );
+  } finally {
+    Logger.prototype.error = originalLoggerError;
+    Logger.prototype.warn = originalLoggerWarn;
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService maps provider quota failures to Too Many Requests after exhausting fallback models', async () => {
+  const restoreEnv = useTestAiEnv();
 
   const restoreLoggerLog = silenceInfoLogs();
   const originalLoggerWarn = Logger.prototype.warn;
@@ -309,30 +522,27 @@ test('ChatService maps provider quota failures to Too Many Requests without retr
 
     await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
 
-    assert.equal(calls, 1);
-    assert.equal(loggedWarnings.length, 1);
-    assert.equal((loggedWarnings[0][0] as { event: string }).event, 'chat.provider_quota_exceeded');
+    assert.equal(calls, 3);
+    assert.deepEqual(
+      loggedWarnings.map(([payload]) => (payload as { event: string }).event),
+      ['chat.model_fallback_retrying', 'chat.model_fallback_retrying', 'chat.provider_quota_exceeded'],
+    );
     assert.equal(
       loggedWarnings.some(([payload]) => (payload as { event: string }).event === 'chat.agent_generation_retrying'),
       false,
     );
-    assert.equal(loggedErrors.length, 0);
+    assert.equal(loggedErrors.length, 1);
+    assert.equal((loggedErrors[0][0] as { event: string }).event, 'chat.model_fallback_exhausted');
   } finally {
     Logger.prototype.warn = originalLoggerWarn;
     Logger.prototype.error = originalLoggerError;
     restoreLoggerLog();
-
-    if (previousKey === undefined) {
-      delete process.env.GEMINI_API_KEY;
-    } else {
-      process.env.GEMINI_API_KEY = previousKey;
-    }
+    restoreEnv();
   }
 });
 
 test('ChatService detects provider quota failures from nested causes', async () => {
-  const previousKey = process.env.GEMINI_API_KEY;
-  process.env.GEMINI_API_KEY = 'test-key';
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
 
   const restoreLoggerLog = silenceInfoLogs();
   const originalLoggerWarn = Logger.prototype.warn;
@@ -361,18 +571,14 @@ test('ChatService detects provider quota failures from nested causes', async () 
     Logger.prototype.warn = originalLoggerWarn;
     Logger.prototype.error = originalLoggerError;
     restoreLoggerLog();
-
-    if (previousKey === undefined) {
-      delete process.env.GEMINI_API_KEY;
-    } else {
-      process.env.GEMINI_API_KEY = previousKey;
-    }
+    restoreEnv();
   }
 });
 
 test('ChatService maps quota failures during the invalid-tool retry to Too Many Requests', async () => {
-  const previousKey = process.env.GEMINI_API_KEY;
-  process.env.GEMINI_API_KEY = 'test-key';
+  const restoreEnv = useTestAiEnv({
+    GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-primary,gemini-secondary',
+  });
 
   const restoreLoggerLog = silenceInfoLogs();
   const originalLoggerWarn = Logger.prototype.warn;
@@ -406,22 +612,18 @@ test('ChatService maps quota failures during the invalid-tool retry to Too Many 
 
     await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
 
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     assert.deepEqual(
       loggedWarnings.map(([payload]) => (payload as { event: string }).event),
-      ['chat.agent_generation_retrying', 'chat.provider_quota_exceeded'],
+      ['chat.agent_generation_retrying', 'chat.model_fallback_retrying', 'chat.provider_quota_exceeded'],
     );
-    assert.equal(loggedErrors.length, 0);
+    assert.equal(loggedErrors.length, 1);
+    assert.equal((loggedErrors[0][0] as { event: string }).event, 'chat.model_fallback_exhausted');
   } finally {
     Logger.prototype.warn = originalLoggerWarn;
     Logger.prototype.error = originalLoggerError;
     restoreLoggerLog();
-
-    if (previousKey === undefined) {
-      delete process.env.GEMINI_API_KEY;
-    } else {
-      process.env.GEMINI_API_KEY = previousKey;
-    }
+    restoreEnv();
   }
 });
 

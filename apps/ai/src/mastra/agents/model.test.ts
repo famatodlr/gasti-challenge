@@ -1,20 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { getGastiModelId, getGeminiApiKey } from './model.ts';
+import { getGastiModelFallbackChain, getGastiModelId, getGeminiApiKey } from './model.ts';
 
-test('getGastiModelId defaults to Gemini 2.5 Flash for development', () => {
-  assert.equal(getGastiModelId({ NODE_ENV: 'development' }), 'gemini-2.5-flash');
+test('getGastiModelFallbackChain returns the default Gemini fallback chain', () => {
+  assert.deepEqual(getGastiModelFallbackChain({}), [
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-2.5-flash-lite',
+  ]);
 });
 
-test('getGastiModelId uses Gemini 2.5 Pro in production', () => {
-  assert.equal(getGastiModelId({ NODE_ENV: 'production' }), 'gemini-2.5-pro');
+test('getGastiModelFallbackChain uses GASTI_AI_MODEL as a hard override', () => {
+  assert.deepEqual(
+    getGastiModelFallbackChain({
+      GASTI_AI_MODEL: '  gemini-custom-dev  ',
+      GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-2.5-flash,gemini-2.5-pro',
+    }),
+    ['gemini-custom-dev'],
+  );
 });
 
-test('getGastiModelId allows an explicit model override', () => {
+test('getGastiModelFallbackChain parses comma-separated fallback models', () => {
+  assert.deepEqual(
+    getGastiModelFallbackChain({
+      GASTI_AI_MODEL_FALLBACK_CHAIN: ' gemini-a, ,gemini-b ,, gemini-c ',
+    }),
+    ['gemini-a', 'gemini-b', 'gemini-c'],
+  );
+});
+
+test('getGastiModelFallbackChain uses the default chain when the fallback env is blank', () => {
+  assert.deepEqual(getGastiModelFallbackChain({ GASTI_AI_MODEL_FALLBACK_CHAIN: ' ,  , ' }), [
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-2.5-flash-lite',
+  ]);
+});
+
+test('getGastiModelId returns the first configured fallback model', () => {
   assert.equal(
-    getGastiModelId({ NODE_ENV: 'production', GASTI_AI_MODEL: 'gemini-custom-dev' }),
-    'gemini-custom-dev',
+    getGastiModelId({ GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-first,gemini-second' }),
+    'gemini-first',
   );
 });
 

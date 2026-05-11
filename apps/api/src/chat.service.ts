@@ -7,10 +7,11 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { gastiFinanceAgent } from 'ai/mastra';
+import { generateGastiFinanceAgent, getGastiModelFallbackChain } from 'ai/mastra';
 
 type AgentGenerateOptions = {
   maxSteps?: number;
+  modelId?: string;
 };
 
 type AgentGenerateResult = {
@@ -24,7 +25,7 @@ export type FinanceAgent = {
 export const GASTI_FINANCE_AGENT = Symbol('GASTI_FINANCE_AGENT');
 
 export const defaultFinanceAgent: FinanceAgent = {
-  generate: (message, options) => gastiFinanceAgent.generate(message, options),
+  generate: (message, options) => generateGastiFinanceAgent(message, options),
 };
 
 type SerializedAgentError = {
@@ -39,7 +40,6 @@ const REDACTED_SECRET = '[REDACTED]';
 const PROVIDER_QUOTA_EXCEEDED_MESSAGE = 'The AI provider quota was exceeded. Please try again later.';
 const INVALID_TOOL_ARGUMENT_NAME_SIGNALS = ['AI_InvalidToolArgumentsError', 'AI_TypeValidationError'];
 const INVALID_TOOL_ARGUMENT_MESSAGE_SIGNALS = ['Invalid arguments for tool', 'Type validation failed'];
-const PROVIDER_QUOTA_NAME_SIGNALS = ['AI_RetryError'];
 const PROVIDER_QUOTA_MESSAGE_SIGNALS = [
   'exceeded your current quota',
   'Quota exceeded',
@@ -52,6 +52,17 @@ type SerializeAgentErrorOptions = {
   includeStack?: boolean;
   maxCauseDepth?: number;
 };
+
+class GastiModelFallbackExhaustedError extends Error {
+  constructor(
+    readonly models: readonly string[],
+    readonly errors: readonly unknown[],
+    cause: unknown,
+  ) {
+    super(`All Gemini fallback models were exhausted: ${models.join(', ')}`, { cause });
+    this.name = 'GastiModelFallbackExhaustedError';
+  }
+}
 
 function redactSecrets(value: string | undefined): string | undefined {
   if (!value) {
@@ -190,13 +201,53 @@ function objectHasTooManyRequestsStatus(value: object): boolean {
 }
 
 function objectHasProviderQuotaCode(value: object): boolean {
-  const code = (value as Record<string, unknown>).code;
+  const record = value as Record<string, unknown>;
+  const code = record.code;
+  const status = record.status;
 
   if (isTooManyRequestsStatus(code)) {
     return true;
   }
 
-  return typeof code === 'string' && code.toLocaleUpperCase() === 'RESOURCE_EXHAUSTED';
+  if (typeof code === 'string' && code.toLocaleUpperCase() === 'RESOURCE_EXHAUSTED') {
+    return true;
+  }
+
+  return typeof status === 'string' && status.toLocaleUpperCase() === 'RESOURCE_EXHAUSTED';
+}
+
+function objectHasGeminiQuotaErrorData(value: object): boolean {
+  const data = (value as Record<string, unknown>).data;
+
+  if (typeof data !== 'object' || data === null) {
+    return false;
+  }
+
+  const error = (data as Record<string, unknown>).error;
+
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const errorRecord = error as Record<string, unknown>;
+  const code = errorRecord.code;
+  const status = errorRecord.status;
+  const message = errorRecord.message;
+
+  return (
+    isTooManyRequestsStatus(code) ||
+    (typeof status === 'string' && status.toLocaleUpperCase() === 'RESOURCE_EXHAUSTED') ||
+    matchesAnySignalCaseInsensitive(typeof message === 'string' ? message : undefined, PROVIDER_QUOTA_MESSAGE_SIGNALS)
+  );
+}
+
+function objectHasQuotaResponseBody(value: object): boolean {
+  const responseBody = (value as Record<string, unknown>).responseBody;
+
+  return matchesAnySignalCaseInsensitive(
+    typeof responseBody === 'string' ? responseBody : undefined,
+    PROVIDER_QUOTA_MESSAGE_SIGNALS,
+  );
 }
 
 function isProviderQuotaError(error: unknown, depth = 0): boolean {
@@ -208,21 +259,23 @@ function isProviderQuotaError(error: unknown, depth = 0): boolean {
   const message = (error as { message?: unknown }).message;
 
   if (
-    matchesAnySignal(typeof name === 'string' ? name : undefined, PROVIDER_QUOTA_NAME_SIGNALS) ||
     matchesAnySignalCaseInsensitive(typeof message === 'string' ? message : undefined, PROVIDER_QUOTA_MESSAGE_SIGNALS) ||
     objectHasTooManyRequestsStatus(error) ||
-    objectHasProviderQuotaCode(error)
+    objectHasProviderQuotaCode(error) ||
+    objectHasGeminiQuotaErrorData(error) ||
+    objectHasQuotaResponseBody(error)
   ) {
     return true;
   }
 
-  const cause = readCause(error);
-
-  if (cause === undefined || depth >= MAX_CAUSE_DEPTH) {
+  if (depth >= MAX_CAUSE_DEPTH) {
     return false;
   }
 
-  return isProviderQuotaError(cause, depth + 1);
+  const record = error as Record<string, unknown>;
+  const nestedErrors = [readCause(error), record.lastError, ...(Array.isArray(record.errors) ? record.errors : [])];
+
+  return nestedErrors.some((nestedError) => nestedError !== undefined && isProviderQuotaError(nestedError, depth + 1));
 }
 
 function createInvalidToolArgumentsRetryMessage(message: string): string {
@@ -258,7 +311,7 @@ export class ChatService {
     });
 
     try {
-      return await this.generateAnswer(message, 1);
+      return await this.generateAnswerWithModelFallback(message, 1);
     } catch (error) {
       if (isInvalidToolArgumentsError(error)) {
         this.logger.warn({
@@ -270,15 +323,15 @@ export class ChatService {
         });
 
         try {
-          return await this.generateAnswer(createInvalidToolArgumentsRetryMessage(message), 2);
+          return await this.generateAnswerWithModelFallback(createInvalidToolArgumentsRetryMessage(message), 2);
         } catch (retryError) {
-          if (isProviderQuotaError(retryError)) {
+          if (retryError instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(retryError)) {
             this.throwProviderQuotaExceeded(retryError);
           }
 
           this.logAgentGenerationFailure(retryError);
         }
-      } else if (isProviderQuotaError(error)) {
+      } else if (error instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(error)) {
         this.throwProviderQuotaExceeded(error);
       } else {
         this.logAgentGenerationFailure(error);
@@ -288,24 +341,79 @@ export class ChatService {
     }
   }
 
-  private async generateAnswer(message: string, attempt: number): Promise<string> {
+  private async generateAnswerWithModelFallback(message: string, attempt: number): Promise<string> {
+    const modelIds = getGastiModelFallbackChain();
+    const quotaErrors: unknown[] = [];
+
+    for (const [modelIndex, modelId] of modelIds.entries()) {
+      try {
+        return await this.generateAnswer(message, attempt, modelId, modelIndex, modelIds.length);
+      } catch (error) {
+        if (!isProviderQuotaError(error)) {
+          throw error;
+        }
+
+        quotaErrors.push(error);
+        const nextModelId = modelIds[modelIndex + 1];
+
+        if (nextModelId) {
+          this.logger.warn({
+            event: 'chat.model_fallback_retrying',
+            message: 'Gemini model quota exhausted, retrying with fallback model',
+            attempt,
+            modelId,
+            nextModelId,
+            modelIndex: modelIndex + 1,
+            modelCount: modelIds.length,
+            error: serializeAgentError(error, 0, { includeStack: false, maxCauseDepth: 1 }),
+          });
+
+          continue;
+        }
+
+        const exhaustedError = new GastiModelFallbackExhaustedError(modelIds, quotaErrors, error);
+        this.logger.error({
+          event: 'chat.model_fallback_exhausted',
+          message: 'All Gemini fallback models failed with quota or rate-limit errors',
+          modelIds,
+          error: serializeAgentError(exhaustedError, 0, { includeStack: false, maxCauseDepth: 1 }),
+        });
+
+        throw exhaustedError;
+      }
+    }
+
+    throw new GastiModelFallbackExhaustedError(modelIds, quotaErrors, quotaErrors.at(-1));
+  }
+
+  private async generateAnswer(
+    message: string,
+    attempt: number,
+    modelId: string,
+    modelIndex: number,
+    modelCount: number,
+  ): Promise<string> {
     this.logger.log({
-      event: 'chat.agent_generation_started',
-      message: 'Agent generation started',
+      event: 'chat.model_attempt_started',
+      message: 'Gemini model attempt started',
       attempt,
+      modelId,
+      modelIndex: modelIndex + 1,
+      modelCount,
       messageLength: message.length,
     });
 
-    const result = await this.agent.generate(message, { maxSteps: 5 });
+    const result = await this.agent.generate(message, { maxSteps: 5, modelId });
 
     if (!result.text.trim()) {
       throw new Error('Agent returned an empty answer.');
     }
 
     this.logger.log({
-      event: 'chat.agent_response_generated',
-      message: 'Agent response generated',
+      event: 'chat.model_attempt_succeeded',
+      message: 'Gemini model attempt succeeded',
       attempt,
+      modelId,
       responseLength: result.text.length,
     });
 
