@@ -24,8 +24,8 @@ export class ChatService {
   constructor(@Inject(GASTI_FINANCE_AGENT) private readonly agent: FinanceAgent = defaultFinanceAgent) {}
 
   async answer(message: string): Promise<string> {
-    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()) {
-      throw new ServiceUnavailableException('GOOGLE_GENERATIVE_AI_API_KEY is required to use the chat endpoint.');
+    if (!process.env.GEMINI_API_KEY?.trim()) {
+      throw new ServiceUnavailableException('GEMINI_API_KEY is required to use the chat endpoint.');
     }
 
     try {

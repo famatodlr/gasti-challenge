@@ -1,5 +1,5 @@
 import { Agent } from '@mastra/core/agent';
-import { google } from '@ai-sdk/google';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
 import {
   comparePeriodsTool,
@@ -8,9 +8,13 @@ import {
   forecastMonthEndSpendTool,
   spendingSummaryTool,
 } from '../tools/index.ts';
-import { getGastiModelId } from './model.ts';
+import { getGastiModelId, getGeminiApiKey } from './model.ts';
 
-export { getGastiModelId } from './model.ts';
+export { getGastiModelId, getGeminiApiKey } from './model.ts';
+
+const google = createGoogleGenerativeAI({
+  apiKey: getGeminiApiKey(),
+});
 
 const GASTI_AGENT_INSTRUCTIONS = `You are Gasti, a conversational personal finance assistant for ARS spending.
 

@@ -12,7 +12,7 @@ bun run build
 The chat agent uses Google Gemini through AI SDK. Set your Google AI Studio key before calling the API:
 
 ```bash
-export GOOGLE_GENERATIVE_AI_API_KEY="your-google-ai-studio-key"
+export GEMINI_API_KEY="your-google-ai-studio-key"
 ```
 
 By default, Gasti uses `gemini-2.5-flash` for development and `gemini-2.5-pro` when `NODE_ENV=production`. Override either with `GASTI_AI_MODEL`.
@@ -68,6 +68,8 @@ Response shape:
 }
 ```
 
+If `GEMINI_API_KEY` is unset or blank, `POST /chat` returns `503` with a missing-key error and does not invoke the model.
+
 ## Validation
 
 Run these commands from `apps/ai` to validate the deterministic finance tools work:
@@ -110,7 +112,7 @@ These tools are registered on `gastiFinanceAgent`, which is exposed through the 
 
 - Deterministic analytics live in `apps/ai/src/mastra/domain`.
 - Mastra tools are thin wrappers: load local data, call analytics, return structured output.
-- The NestJS API stays thin: it validates the chat body, checks `GOOGLE_GENERATIVE_AI_API_KEY`, invokes the Mastra agent, and returns `{ answer }`.
+- The NestJS API stays thin: it validates the chat body, checks `GEMINI_API_KEY`, invokes the Mastra agent, and returns `{ answer }`.
 - Development uses Gemini 2.5 Flash by default; production uses Gemini 2.5 Pro by default.
 - Challenge data is local-only mock spending data in ARS from `data/transactions.json`.
 - Raw transaction categories are preserved from the dataset. The domain layer normalizes them into 10 product categories for analytics and tool outputs: `vivienda`, `servicios`, `suscripciones`, `supermercado`, `comida_fuera`, `transporte`, `salud`, `educacion`, `compras`, and `ocio`.
