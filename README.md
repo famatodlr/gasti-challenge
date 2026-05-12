@@ -58,6 +58,62 @@ bun run dev:api
 
 The API listens on `http://localhost:3001` unless `PORT` is set.
 
+Frontend workspace:
+
+```bash
+cd apps/ui
+bun run dev
+bun run build
+```
+
+From the repo root, you can run the frontend with:
+
+```bash
+bun run dev:ui
+```
+
+The UI listens on `http://localhost:3000` by default and posts to its local Next proxy at `/api/chat`. The proxy forwards to `http://localhost:3001/chat` unless `GASTI_CHAT_API_URL` is set:
+
+```bash
+export GASTI_CHAT_API_URL="http://localhost:3001/chat"
+```
+
+Legacy direct backend verification:
+
+```bash
+curl -s http://localhost:3001/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"¿Cuánto gasté en mayo de 2026?"}'
+```
+
+Stateless multi-turn backend verification:
+
+```bash
+curl -s http://localhost:3001/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Proyectá mi gasto de este mes" },
+      { "role": "assistant", "content": "¿Qué fecha de hoy?" },
+      { "role": "user", "content": "12 de mayo de 2026" }
+    ]
+  }'
+```
+
+UI proxy verification:
+
+```bash
+curl -s http://localhost:3000/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Proyectá mi gasto de este mes" },
+      { "role": "assistant", "content": "¿Qué fecha de hoy?" },
+      { "role": "user", "content": "12 de mayo de 2026" }
+    ]
+  }'
+```
+
 Health check:
 
 ```bash
@@ -110,7 +166,9 @@ Response shape:
 }
 ```
 
-`POST /chat` is stateless. The `messages` array is conversation context for the current request only; the API does not persist chat history, create user accounts, use vector search, or add long-term memory. The future UI owns the history and should send the full relevant conversation on each request.
+`POST /chat` is stateless. The `messages` array is conversation context for the current request only; the API does not persist chat history, create user accounts, use vector search, or add long-term memory.
+
+The UI keeps chat bubbles in local React state for the demo, but it does not implement real conversation memory. Its `/api/chat` proxy accepts the UI's local `{ messages: [...] }` payload, validates that it ends with a user message, and forwards the stateless multi-turn backend contract as `{ "messages": [...] }`.
 
 For simple one-shot calls, the legacy body shape is still accepted and internally converted to a single user message:
 
@@ -175,7 +233,7 @@ These tools are registered on `gastiFinanceAgent`, which is exposed through the 
 
 ## Left For Later
 
-- Build the UI chat integration.
+- Add real conversation memory if the product needs multi-turn context beyond the visible demo.
 - Add authentication if the product needs it.
 - Add Memory only if it helps the chat experience.
 - Add Workflow only if there is a useful recurring review flow.
