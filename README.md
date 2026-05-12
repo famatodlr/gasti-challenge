@@ -78,7 +78,7 @@ The UI listens on `http://localhost:3000` by default and posts to its local Next
 export GASTI_CHAT_API_URL="http://localhost:3001/chat"
 ```
 
-Phase 6 backend verification:
+Legacy direct backend verification:
 
 ```bash
 curl -s http://localhost:3001/chat \
@@ -86,12 +86,32 @@ curl -s http://localhost:3001/chat \
   -d '{"message":"¿Cuánto gasté en mayo de 2026?"}'
 ```
 
-Phase 6 UI proxy verification:
+Stateless multi-turn backend verification:
+
+```bash
+curl -s http://localhost:3001/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Proyectá mi gasto de este mes" },
+      { "role": "assistant", "content": "¿Qué fecha de hoy?" },
+      { "role": "user", "content": "12 de mayo de 2026" }
+    ]
+  }'
+```
+
+UI proxy verification:
 
 ```bash
 curl -s http://localhost:3000/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"¿Cuánto gasté en mayo de 2026?"}]}'
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Proyectá mi gasto de este mes" },
+      { "role": "assistant", "content": "¿Qué fecha de hoy?" },
+      { "role": "user", "content": "12 de mayo de 2026" }
+    ]
+  }'
 ```
 
 Health check:
@@ -148,7 +168,7 @@ Response shape:
 
 `POST /chat` is stateless. The `messages` array is conversation context for the current request only; the API does not persist chat history, create user accounts, use vector search, or add long-term memory.
 
-The Phase 6 UI keeps chat bubbles locally for the demo, but it does not implement real conversation memory. Its `/api/chat` proxy accepts the UI's local `{ messages: [...] }` payload, extracts the latest user message, and forwards the existing backend contract as `{ "message": "..." }`.
+The UI keeps chat bubbles in local React state for the demo, but it does not implement real conversation memory. Its `/api/chat` proxy accepts the UI's local `{ messages: [...] }` payload, validates that it ends with a user message, and forwards the stateless multi-turn backend contract as `{ "messages": [...] }`.
 
 For simple one-shot calls, the legacy body shape is still accepted and internally converted to a single user message:
 

@@ -10,6 +10,11 @@ type ChatMessage = {
   content: string;
 };
 
+type ApiChatMessage = {
+  role: ChatRole;
+  content: string;
+};
+
 type ChatResponse = {
   answer?: unknown;
   error?: unknown;
@@ -46,6 +51,13 @@ function getErrorMessage(payload: ChatResponse | null): string {
   return 'No pude conectar con Gasti. Revisá que el backend esté corriendo e intentá de nuevo.';
 }
 
+function toApiMessages(messages: ChatMessage[]): ApiChatMessage[] {
+  return messages
+    .filter((message) => message.id !== 'welcome')
+    .map(({ role, content }) => ({ role, content: content.trim() }))
+    .filter((message) => message.content.length > 0);
+}
+
 export default function Page() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState('');
@@ -80,7 +92,7 @@ export default function Page() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: trimmedContent }],
+          messages: toApiMessages(nextMessages),
         }),
       });
 

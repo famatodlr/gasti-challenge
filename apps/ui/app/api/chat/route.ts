@@ -5,29 +5,53 @@ const GENERIC_CHAT_ERROR = 'No pude conectar con Gasti. Revisá que el backend e
 const INVALID_INPUT_ERROR = 'Mandame una pregunta para consultar tus gastos.';
 const INVALID_RESPONSE_ERROR = 'Gasti respondió con un formato inesperado. Intentá de nuevo.';
 
+type ChatRole = 'user' | 'assistant';
+
+type ChatMessage = {
+  role: ChatRole;
+  content: string;
+};
+
+const SUPPORTED_CHAT_ROLES = new Set<ChatRole>(['user', 'assistant']);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function extractLatestUserMessage(body: unknown): string | null {
+function normalizeMessage(value: unknown): ChatMessage | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const role = value.role;
+  const content = typeof value.content === 'string' ? value.content.trim() : '';
+
+  if (typeof role !== 'string' || !SUPPORTED_CHAT_ROLES.has(role as ChatRole) || !content) {
+    return null;
+  }
+
+  return { role: role as ChatRole, content };
+}
+
+function normalizeMessages(body: unknown): ChatMessage[] | null {
   if (!isRecord(body) || !Array.isArray(body.messages)) {
     return null;
   }
 
-  const latestUserMessage = body.messages
-    .slice()
-    .reverse()
-    .find((message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string');
+  const messages = body.messages.map((message) => normalizeMessage(message));
 
-  const content = isRecord(latestUserMessage) ? latestUserMessage.content : null;
-
-  if (typeof content !== 'string') {
+  if (messages.some((message) => message === null)) {
     return null;
   }
 
-  const trimmedContent = content.trim();
+  const normalizedMessages = messages as ChatMessage[];
+  const lastMessage = normalizedMessages.at(-1);
 
-  return trimmedContent.length > 0 ? trimmedContent : null;
+  if (normalizedMessages.length === 0 || lastMessage?.role !== 'user') {
+    return null;
+  }
+
+  return normalizedMessages;
 }
 
 function jsonError(message: string, status: number) {
@@ -43,9 +67,9 @@ export async function POST(request: Request) {
     return jsonError(INVALID_INPUT_ERROR, 400);
   }
 
-  const latestUserMessage = extractLatestUserMessage(body);
+  const messages = normalizeMessages(body);
 
-  if (!latestUserMessage) {
+  if (!messages) {
     return jsonError(INVALID_INPUT_ERROR, 400);
   }
 
@@ -55,7 +79,7 @@ export async function POST(request: Request) {
     const backendResponse = await fetch(backendUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: latestUserMessage }),
+      body: JSON.stringify({ messages }),
     });
 
     const backendBody = await backendResponse.json().catch(() => null);
