@@ -58,6 +58,26 @@ bun run dev:api
 
 The API listens on `http://localhost:3001` unless `PORT` is set.
 
+Frontend workspace:
+
+```bash
+cd apps/ui
+bun run dev
+bun run build
+```
+
+From the repo root, you can run the frontend with:
+
+```bash
+bun run dev:ui
+```
+
+The UI listens on `http://localhost:3000` by default and posts to its local Next proxy at `/api/chat`. The proxy forwards to `http://localhost:3001/chat` unless `GASTI_CHAT_API_URL` is set:
+
+```bash
+export GASTI_CHAT_API_URL="http://localhost:3001/chat"
+```
+
 Health check:
 
 ```bash
@@ -110,7 +130,9 @@ Response shape:
 }
 ```
 
-`POST /chat` is stateless. The `messages` array is conversation context for the current request only; the API does not persist chat history, create user accounts, use vector search, or add long-term memory. The future UI owns the history and should send the full relevant conversation on each request.
+`POST /chat` is stateless. The `messages` array is conversation context for the current request only; the API does not persist chat history, create user accounts, use vector search, or add long-term memory.
+
+The Phase 6 UI keeps chat bubbles locally for the demo, but it does not implement real conversation memory. Its `/api/chat` proxy accepts the UI's local `{ messages: [...] }` payload, extracts the latest user message, and forwards the existing backend contract as `{ "message": "..." }`.
 
 For simple one-shot calls, the legacy body shape is still accepted and internally converted to a single user message:
 
@@ -175,7 +197,7 @@ These tools are registered on `gastiFinanceAgent`, which is exposed through the 
 
 ## Left For Later
 
-- Build the UI chat integration.
+- Add real conversation memory if the product needs multi-turn context beyond the visible demo.
 - Add authentication if the product needs it.
 - Add Memory only if it helps the chat experience.
 - Add Workflow only if there is a useful recurring review flow.
