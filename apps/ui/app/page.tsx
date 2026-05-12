@@ -1,9 +1,17 @@
 'use client';
 
+import Image from 'next/image';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
+import {
+  createActivityFeedItems,
+  normalizeActivityEvent,
+  normalizeActivityEvents,
+  type ActivityEvent,
+  type ActivityFeedStatus,
+} from '@/lib/activity';
+
 type ChatRole = 'user' | 'assistant';
-type ActivityType = 'status' | 'tool_call' | 'tool_result' | 'warning' | 'error' | 'final_answer';
 
 type ChatMessage = {
   id: string;
@@ -14,14 +22,6 @@ type ChatMessage = {
 type ApiChatMessage = {
   role: ChatRole;
   content: string;
-};
-
-type ActivityEvent = {
-  type: ActivityType;
-  label: string;
-  toolName?: string;
-  timestamp?: string;
-  answer?: string;
 };
 
 type ChatResponse = {
@@ -45,51 +45,12 @@ const initialMessages: ChatMessage[] = [
   },
 ];
 
-const supportedActivityTypes = new Set<ActivityType>([
-  'status',
-  'tool_call',
-  'tool_result',
-  'warning',
-  'error',
-  'final_answer',
-]);
-
 function createMessage(role: ChatRole, content: string): ChatMessage {
   return {
     id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     role,
     content,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function normalizeActivityEvent(value: unknown): ActivityEvent | null {
-  if (!isRecord(value) || typeof value.type !== 'string' || !supportedActivityTypes.has(value.type as ActivityType)) {
-    return null;
-  }
-
-  if (typeof value.label !== 'string' || value.label.trim().length === 0) {
-    return null;
-  }
-
-  return {
-    type: value.type as ActivityType,
-    label: value.label,
-    toolName: typeof value.toolName === 'string' ? value.toolName : undefined,
-    timestamp: typeof value.timestamp === 'string' ? value.timestamp : undefined,
-    answer: typeof value.answer === 'string' ? value.answer : undefined,
-  };
-}
-
-function normalizeActivityEvents(value: unknown): ActivityEvent[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.map((event) => normalizeActivityEvent(event)).filter((event): event is ActivityEvent => event !== null);
 }
 
 function getErrorMessage(payload: ChatResponse | null): string {
@@ -121,44 +82,36 @@ function formatActivityTime(timestamp: string | undefined): string {
   return date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function activityTone(type: ActivityType): string {
-  if (type === 'error') {
-    return 'border-[#7f2c32] bg-[#2a1216] text-[#ff9ba3]';
+function activityLabelClass(status: ActivityFeedStatus): string {
+  if (status === 'error') {
+    return 'text-[#ff9ba3]';
   }
 
-  if (type === 'warning') {
-    return 'border-[#6e4f1f] bg-[#241d0e] text-[#f0c56b]';
+  if (status === 'warning') {
+    return 'text-[#f0c56b]';
   }
 
-  if (type === 'tool_call') {
-    return 'border-[#365339] bg-[#101b12] text-[#b7f56a]';
+  if (status === 'active') {
+    return 'text-[#f7fff8]';
   }
 
-  if (type === 'tool_result' || type === 'final_answer') {
-    return 'border-[#2d4d46] bg-[#0d1917] text-[#8ee7d0]';
-  }
-
-  return 'border-[#2d332f] bg-[#101311] text-[#d8ded9]';
+  return 'text-[#94a098]';
 }
 
-function activityDot(type: ActivityType): string {
-  if (type === 'error') {
-    return 'bg-[#ff6b75]';
+function activityDotClass(status: ActivityFeedStatus): string {
+  if (status === 'error') {
+    return 'border-[#ff9ba3] bg-[#ff6b75] shadow-[0_0_0_4px_rgba(255,107,117,0.08)]';
   }
 
-  if (type === 'warning') {
-    return 'bg-[#f0c56b]';
+  if (status === 'warning') {
+    return 'border-[#f0c56b] bg-[#f0c56b] shadow-[0_0_0_4px_rgba(240,197,107,0.08)]';
   }
 
-  if (type === 'tool_call') {
-    return 'bg-[#b7f56a]';
+  if (status === 'active') {
+    return 'border-[#d9ff99] bg-[#b7f56a] shadow-[0_0_0_5px_rgba(163,230,53,0.12)]';
   }
 
-  if (type === 'tool_result' || type === 'final_answer') {
-    return 'bg-[#8ee7d0]';
-  }
-
-  return 'bg-[#7f8a82]';
+  return 'border-[#3b4740] bg-[#111713]';
 }
 
 export default function Page() {
@@ -169,6 +122,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isSendingRef = useRef(false);
+  const activityItems = createActivityFeedItems(latestActivity);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -237,7 +191,15 @@ export default function Page() {
           continue;
         }
 
-        const event = normalizeActivityEvent(JSON.parse(data));
+        let parsedEvent: unknown;
+
+        try {
+          parsedEvent = JSON.parse(data);
+        } catch {
+          continue;
+        }
+
+        const event = normalizeActivityEvent(parsedEvent);
 
         if (!event) {
           continue;
@@ -310,47 +272,44 @@ export default function Page() {
   }
 
   return (
-    <main className="min-h-screen bg-[#050706] px-4 py-5 text-[#edf2ee] sm:px-6 lg:px-8">
-      <section className="mx-auto flex h-[calc(100vh-40px)] min-h-[720px] w-full max-w-6xl flex-col gap-4">
-        <header className="rounded-lg border border-[#202822] bg-[#0b0f0c] px-5 py-4 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md border border-[#a3e635]/30 bg-[#a3e635]/10 text-sm font-bold text-[#bef264]">
-                  G
-                </div>
-                <div>
-                  <h1 className="text-2xl font-semibold tracking-normal text-[#f7fff8]">Gasti</h1>
-                  <p className="mt-0.5 text-sm text-[#89948b]">Tu asistente financiero</p>
-                </div>
+    <main className="min-h-screen overflow-x-hidden bg-[#050706] px-3 py-4 text-[#edf2ee] sm:px-5 lg:px-7">
+      <section className="mx-auto flex min-h-[calc(100vh-32px)] w-full max-w-6xl flex-col gap-4 lg:h-[calc(100vh-32px)] lg:min-h-[700px]">
+        <header className="rounded-lg border border-[#202822] bg-[#0b0f0c] px-4 py-3 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-4">
+              <Image
+                src="/gasti-logo.png"
+                width={204}
+                height={50}
+                alt="Gasti"
+                priority
+                className="h-auto w-[136px] shrink-0 sm:w-[154px]"
+              />
+              <div className="hidden h-9 w-px bg-[#243028] sm:block" aria-hidden="true" />
+              <div className="min-w-0">
+                <h1 className="sr-only">Gasti</h1>
+                <p className="truncate text-sm font-medium text-[#dfe8e1]">Tu asistente financiero</p>
+                <p className="mt-0.5 text-xs text-[#77817a]">Conversaciones sobre gastos en ARS</p>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-xs sm:min-w-[330px]">
-              <div className="rounded-md border border-[#202822] bg-[#0f1511] px-3 py-2">
-                <p className="text-[#6f7a72]">Datos</p>
-                <p className="mt-1 font-semibold text-[#dce7de]">Mock ARS</p>
-              </div>
-              <div className="rounded-md border border-[#202822] bg-[#0f1511] px-3 py-2">
-                <p className="text-[#6f7a72]">Modo</p>
-                <p className="mt-1 font-semibold text-[#bef264]">Live</p>
-              </div>
-              <div className="rounded-md border border-[#202822] bg-[#0f1511] px-3 py-2">
-                <p className="text-[#6f7a72]">Tools</p>
-                <p className="mt-1 font-semibold text-[#dce7de]">Auditables</p>
-              </div>
+            <div className="flex items-center gap-2 text-xs font-medium text-[#93a093]">
+              <span className="h-2 w-2 rounded-full bg-[#a3e635] shadow-[0_0_0_4px_rgba(163,230,53,0.08)]" />
+              En línea
             </div>
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[#202822] bg-[#0b0f0c] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-            <div className="flex items-center justify-between border-b border-[#202822] px-4 py-3 sm:px-5">
-              <div>
+        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
+          <section className="flex min-h-[560px] flex-col overflow-hidden rounded-lg border border-[#202822] bg-[#0b0f0c] shadow-[0_24px_80px_rgba(0,0,0,0.35)] lg:min-h-0">
+            <div className="flex items-center justify-between gap-3 border-b border-[#202822] px-4 py-3 sm:px-5">
+              <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-[#f7fff8]">Chat financiero</h2>
-                <p className="mt-0.5 text-xs text-[#77817a]">Consultas sobre gastos, recurrencias y proyecciones</p>
+                <p className="mt-0.5 truncate text-xs text-[#77817a]">
+                  Consultas sobre gastos, recurrencias y proyecciones
+                </p>
               </div>
-              <div className="rounded-full border border-[#a3e635]/25 bg-[#a3e635]/10 px-3 py-1 text-xs font-semibold text-[#bef264]">
-                Online
+              <div className="shrink-0 rounded-full border border-[#a3e635]/20 bg-[#a3e635]/10 px-2.5 py-1 text-xs font-semibold text-[#bef264]">
+                Live
               </div>
             </div>
 
@@ -362,9 +321,9 @@ export default function Page() {
                   return (
                     <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                       <div
-                        className={`max-w-[88%] whitespace-pre-wrap rounded-lg px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[74%] ${
+                        className={`max-w-[90%] whitespace-pre-wrap break-words rounded-lg px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[74%] ${
                           isUser
-                            ? 'rounded-br-sm border border-[#9bdc4f]/25 bg-[#1f3517] text-[#f6ffe8]'
+                            ? 'rounded-br-sm border border-[#9bdc4f]/25 bg-[#1d3216] text-[#f6ffe8]'
                             : 'rounded-bl-sm border border-[#252e28] bg-[#111713] text-[#dde5df]'
                         }`}
                       >
@@ -375,9 +334,9 @@ export default function Page() {
                 })}
 
                 {isLoading ? (
-                  <div className="flex justify-start">
+                  <div className="flex justify-start" aria-live="polite">
                     <div className="rounded-lg rounded-bl-sm border border-[#252e28] bg-[#111713] px-4 py-3 text-sm text-[#8f9a92] shadow-sm">
-                      Procesando...
+                      Procesando…
                     </div>
                   </div>
                 ) : null}
@@ -388,7 +347,10 @@ export default function Page() {
 
             <div className="border-t border-[#202822] bg-[#090d0a] px-4 py-4 sm:px-5">
               {error ? (
-                <div className="mb-3 rounded-md border border-[#7f2c32] bg-[#2a1216] px-3 py-2 text-sm text-[#ff9ba3]">
+                <div
+                  className="mb-3 rounded-md border border-[#7f2c32] bg-[#2a1216] px-3 py-2 text-sm text-[#ff9ba3]"
+                  role="alert"
+                >
                   {error}
                 </div>
               ) : null}
@@ -400,25 +362,28 @@ export default function Page() {
                     type="button"
                     onClick={() => void sendMessage(question)}
                     disabled={isLoading}
-                    className="rounded-full border border-[#27322a] bg-[#101611] px-3 py-2 text-left text-xs text-[#b9c5bd] transition hover:border-[#a3e635]/60 hover:text-[#d9ff99] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-full border border-[#27322a] bg-[#101611] px-3 py-2 text-left text-xs text-[#b9c5bd] transition-colors hover:border-[#a3e635]/60 hover:text-[#d9ff99] focus-visible:border-[#a3e635]/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#a3e635]/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {question}
                   </button>
                 ))}
               </div>
 
-              <form onSubmit={handleSubmit} className="flex gap-2">
+              <form onSubmit={handleSubmit} className="flex flex-col gap-2 sm:flex-row">
                 <input
+                  name="message"
+                  aria-label="Mensaje para Gasti"
+                  autoComplete="off"
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   disabled={isLoading}
-                  placeholder="Preguntá por tus gastos..."
-                  className="min-w-0 flex-1 rounded-md border border-[#27322a] bg-[#0f1511] px-4 py-3 text-sm text-[#f4f8f5] outline-none transition placeholder:text-[#667069] focus:border-[#a3e635]/70 focus:ring-4 focus:ring-[#a3e635]/10 disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="Preguntá por tus gastos…"
+                  className="min-w-0 flex-1 rounded-md border border-[#27322a] bg-[#0f1511] px-4 py-3 text-sm text-[#f4f8f5] outline-none transition-colors placeholder:text-[#667069] focus:border-[#a3e635]/70 focus:ring-4 focus:ring-[#a3e635]/10 disabled:cursor-not-allowed disabled:opacity-70"
                 />
                 <button
                   type="submit"
                   disabled={isLoading || input.trim().length === 0}
-                  className="rounded-md border border-[#b7f56a]/20 bg-[#a3e635] px-5 py-3 text-sm font-semibold text-[#102006] transition hover:bg-[#bef264] disabled:cursor-not-allowed disabled:border-[#3b443d] disabled:bg-[#27322a] disabled:text-[#78837b]"
+                  className="rounded-md border border-[#b7f56a]/20 bg-[#a3e635] px-5 py-3 text-sm font-semibold text-[#102006] transition-colors hover:bg-[#bef264] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#a3e635]/20 disabled:cursor-not-allowed disabled:border-[#3b443d] disabled:bg-[#27322a] disabled:text-[#78837b] sm:w-auto"
                 >
                   Enviar
                 </button>
@@ -426,50 +391,68 @@ export default function Page() {
             </div>
           </section>
 
-          <aside className="flex min-h-[320px] flex-col rounded-lg border border-[#202822] bg-[#0b0f0c] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+          <aside className="flex min-h-[320px] max-h-[440px] flex-col overflow-hidden rounded-lg border border-[#202822] bg-[#0b0f0c] shadow-[0_24px_80px_rgba(0,0,0,0.28)] lg:max-h-none">
             <div className="border-b border-[#202822] px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-[#f7fff8]">Actividad del agente</h2>
-                  <p className="mt-0.5 text-xs text-[#77817a]">Última respuesta</p>
+                  <p className="mt-0.5 text-xs text-[#77817a]">
+                    {isLoading ? 'En curso' : latestActivity.length > 0 ? 'Última respuesta' : 'En espera'}
+                  </p>
                 </div>
-                <div className="rounded-md border border-[#27322a] bg-[#101611] px-2.5 py-1 text-xs font-semibold text-[#a3e635]">
-                  {latestActivity.length}
-                </div>
+                {activityItems.length > 0 ? (
+                  <span className="shrink-0 text-xs font-medium text-[#79847d]">
+                    {activityItems.length === 1 ? '1 paso' : `${activityItems.length} pasos`}
+                  </span>
+                ) : null}
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              {latestActivity.length === 0 ? (
-                <div className="flex h-full min-h-[220px] items-center justify-center rounded-md border border-dashed border-[#27322a] px-5 text-center text-sm text-[#6f7a72]">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
+              {activityItems.length === 0 ? (
+                <div className="flex h-full min-h-[220px] items-center justify-center px-4 text-center text-sm leading-6 text-[#6f7a72]">
                   La actividad aparecerá cuando Gasti procese tu próxima consulta.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {latestActivity.map((event, index) => {
-                    const time = formatActivityTime(event.timestamp);
+                <ol className="space-y-0">
+                  {activityItems.map((item, index) => {
+                    const time = formatActivityTime(item.timestamp);
 
                     return (
-                      <div
-                        key={`${event.type}-${event.timestamp ?? index}-${index}`}
-                        className={`rounded-md border px-3 py-2.5 ${activityTone(event.type)}`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${activityDot(event.type)}`} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="break-words text-sm font-medium leading-5">{event.label}</p>
-                              {time ? <span className="shrink-0 text-[11px] opacity-60">{time}</span> : null}
-                            </div>
-                            {event.toolName ? (
-                              <p className="mt-1 break-words font-mono text-[11px] text-[#8b978f]">{event.toolName}</p>
+                      <li key={item.id} className="relative flex gap-3 pb-4 last:pb-0">
+                        <div className="relative flex w-4 shrink-0 justify-center">
+                          {index < activityItems.length - 1 ? (
+                            <span
+                              className="absolute bottom-[-1rem] top-4 w-px bg-[#1f2923]"
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                          <span
+                            className={`relative z-10 mt-1 h-2.5 w-2.5 rounded-full border ${activityDotClass(
+                              item.status,
+                            )}`}
+                            aria-hidden="true"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1 pb-0.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <p className={`break-words text-sm font-medium leading-5 ${activityLabelClass(item.status)}`}>
+                              {item.label}
+                            </p>
+                            {time ? (
+                              <span className="shrink-0 pt-0.5 text-[11px] leading-4 text-[#637069]">{time}</span>
                             ) : null}
                           </div>
+                          {item.detail ? (
+                            <p className="mt-1 break-words font-mono text-[11px] leading-4 text-[#69746d]">
+                              {item.detail}
+                            </p>
+                          ) : null}
                         </div>
-                      </div>
+                      </li>
                     );
                   })}
-                </div>
+                </ol>
               )}
             </div>
           </aside>

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test": "bun test ./lib",
     "start": "next start"
   },
   "dependencies": {
