@@ -14,6 +14,35 @@ const PROVIDER_QUOTA_MESSAGE = 'The AI provider quota was exceeded. Please try a
 const AI_ENV_KEYS = ['GEMINI_API_KEY', 'GASTI_AI_MODEL', 'GASTI_AI_MODEL_FALLBACK_CHAIN'] as const;
 
 type AiEnvKey = (typeof AI_ENV_KEYS)[number];
+type TestChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+type CapturedGenerateCall = {
+  messages: TestChatMessage[];
+  modelId?: string;
+  maxSteps?: number;
+};
+
+function userConversation(content: string): TestChatMessage[] {
+  return [{ role: 'user', content }];
+}
+
+function comparisonFollowUpConversation(): TestChatMessage[] {
+  return [
+    { role: 'user', content: 'Comparame mis gastos de mayo de 2026 contra abril de 2026' },
+    {
+      role: 'assistant',
+      content:
+        'En mayo de 2026, tus gastos bajaron contra abril. Salud aumento, Servicios bajo y Educacion bajo.',
+    },
+    { role: 'user', content: 'Que categoria aumento mas?' },
+  ];
+}
+
+function copyMessages(messages: readonly TestChatMessage[]): TestChatMessage[] {
+  return messages.map((message) => ({ ...message }));
+}
 
 function restoreAiEnv(snapshot: Record<AiEnvKey, string | undefined>): void {
   for (const key of AI_ENV_KEYS) {
@@ -77,29 +106,30 @@ function assertProviderQuotaException(error: unknown): boolean {
   return true;
 }
 
-test('ChatService invokes the finance agent with the user message', async () => {
+test('ChatService invokes the finance agent with the full message history', async () => {
   const restoreEnv = useTestAiEnv();
   const restoreLoggerLog = silenceInfoLogs();
+  const messages = comparisonFollowUpConversation();
 
   try {
     const service = new ChatService({
-      generate: async (message, options) => {
-        assert.equal(message, 'Que gastos fijos tengo?');
+      generate: async (receivedMessages, options) => {
+        assert.deepEqual(receivedMessages, messages);
         assert.equal(options?.maxSteps, 5);
         assert.equal(options?.modelId, 'gemini-2.5-flash');
 
-        return { text: 'Tenes gastos fijos detectados.' };
+        return { text: 'Salud fue la categoria que mas aumento.' };
       },
     });
 
-    assert.equal(await service.answer('Que gastos fijos tengo?'), 'Tenes gastos fijos detectados.');
+    assert.equal(await service.answer(messages), 'Salud fue la categoria que mas aumento.');
   } finally {
     restoreEnv();
     restoreLoggerLog();
   }
 });
 
-test('ChatService falls back to the next model on provider quota errors', async () => {
+test('ChatService falls back to the next model with the same message history on provider quota errors', async () => {
   const restoreEnv = useTestAiEnv({
     GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-primary,gemini-secondary,gemini-third',
   });
@@ -109,13 +139,18 @@ test('ChatService falls back to the next model on provider quota errors', async 
   Logger.prototype.warn = function (...args: unknown[]) {
     loggedWarnings.push(args);
   };
+  const messages = comparisonFollowUpConversation();
 
   try {
-    const calls: Array<{ message: string; modelId?: string; maxSteps?: number }> = [];
+    const calls: CapturedGenerateCall[] = [];
     const quotaError = new Error('RESOURCE_EXHAUSTED: quota exceeded for GenerateContent');
     const service = new ChatService({
-      generate: async (message, options) => {
-        calls.push({ message, modelId: options?.modelId, maxSteps: options?.maxSteps });
+      generate: async (receivedMessages, options) => {
+        calls.push({
+          messages: copyMessages(receivedMessages),
+          modelId: options?.modelId,
+          maxSteps: options?.maxSteps,
+        });
 
         if (options?.modelId === 'gemini-primary') {
           throw quotaError;
@@ -125,12 +160,13 @@ test('ChatService falls back to the next model on provider quota errors', async 
       },
     });
 
-    assert.equal(await service.answer('Cuanto gaste?'), 'Respuesta desde fallback.');
+    assert.equal(await service.answer(messages), 'Respuesta desde fallback.');
     assert.deepEqual(
       calls.map((call) => call.modelId),
       ['gemini-primary', 'gemini-secondary'],
     );
     assert.deepEqual(calls.map((call) => call.maxSteps), [5, 5]);
+    assert.deepEqual(calls.map((call) => call.messages), [messages, messages]);
     assert.deepEqual(
       loggedWarnings.map(([payload]) => (payload as { event: string }).event),
       ['chat.model_fallback_retrying'],
@@ -163,13 +199,13 @@ test('ChatService exhausts the fallback chain before returning the public quota 
   try {
     const calls: string[] = [];
     const service = new ChatService({
-      generate: async (_message, options) => {
+      generate: async (_messages, options) => {
         calls.push(options?.modelId ?? '');
         throw new Error(`Quota exceeded for ${options?.modelId}`);
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
     assert.deepEqual(calls, ['gemini-primary', 'gemini-secondary']);
     assert.deepEqual(
       loggedWarnings.map(([payload]) => (payload as { event: string }).event),
@@ -209,13 +245,13 @@ test('ChatService honors GASTI_AI_MODEL as a hard override without fallback', as
   try {
     const calls: string[] = [];
     const service = new ChatService({
-      generate: async (_message, options) => {
+      generate: async (_messages, options) => {
         calls.push(options?.modelId ?? '');
         throw new Error('RESOURCE_EXHAUSTED: rate limit reached');
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
     assert.deepEqual(calls, ['gemini-fixed']);
     assert.deepEqual(
       loggedWarnings.map(([payload]) => (payload as { event: string }).event),
@@ -242,7 +278,7 @@ test('ChatService reports a missing Gemini API key as unavailable', async () => 
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), {
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
       constructor: ServiceUnavailableException,
       message: 'GEMINI_API_KEY is required to use the chat endpoint.',
     });
@@ -267,7 +303,7 @@ test('ChatService ignores the provider-specific legacy key when GEMINI_API_KEY i
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), {
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
       constructor: ServiceUnavailableException,
       message: 'GEMINI_API_KEY is required to use the chat endpoint.',
     });
@@ -307,7 +343,7 @@ test('ChatService logs agent generation failures without changing the public err
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), {
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
       constructor: InternalServerErrorException,
       message: 'Failed to generate a chat answer.',
     });
@@ -344,7 +380,7 @@ test('ChatService logs agent generation failures without changing the public err
   }
 });
 
-test('ChatService retries invalid tool argument failures once with corrective instructions', async () => {
+test('ChatService retries invalid tool argument failures once with corrective instructions and full history', async () => {
   const previousKey = process.env.GEMINI_API_KEY;
   process.env.GEMINI_API_KEY = 'test-key';
 
@@ -359,40 +395,42 @@ test('ChatService retries invalid tool argument failures once with corrective in
   Logger.prototype.error = function (...args: unknown[]) {
     loggedErrors.push(args);
   };
+  const messages = comparisonFollowUpConversation();
 
   try {
-    const calls: Array<{ message: string; maxSteps?: number }> = [];
+    const calls: CapturedGenerateCall[] = [];
     const invalidToolError = new Error('Invalid arguments for tool spendingSummaryTool');
     invalidToolError.name = 'AI_InvalidToolArgumentsError';
 
     const service = new ChatService({
-      generate: async (message, options) => {
-        calls.push({ message, maxSteps: options?.maxSteps });
+      generate: async (receivedMessages, options) => {
+        calls.push({ messages: copyMessages(receivedMessages), maxSteps: options?.maxSteps });
 
         if (calls.length === 1) {
           throw invalidToolError;
         }
 
-        return { text: 'Gastaste ARS 12.345 en supermercado en mayo.' };
+        return { text: 'Salud fue la categoria que mas aumento.' };
       },
     });
 
-    assert.equal(
-      await service.answer('Cuanto gaste en supermercado en mayo?'),
-      'Gastaste ARS 12.345 en supermercado en mayo.',
-    );
+    assert.equal(await service.answer(messages), 'Salud fue la categoria que mas aumento.');
 
     assert.equal(calls.length, 2);
     assert.deepEqual(calls.map((call) => call.maxSteps), [5, 5]);
-    assert.equal(calls[0].message, 'Cuanto gaste en supermercado en mayo?');
-    assert.match(calls[1].message, /Original user message:\nCuanto gaste en supermercado en mayo\?/);
-    assert.match(calls[1].message, /exact tool input schema/);
-    assert.match(calls[1].message, /Do not invent/);
-    assert.match(calls[1].message, /top-level from and to/);
-    assert.match(calls[1].message, /currentFrom, currentTo, baselineFrom, and baselineTo/);
-    assert.match(calls[1].message, /Do not use nested dateRange/);
-    assert.match(calls[1].message, /from1/);
-    assert.match(calls[1].message, /YYYY-MM-DD/);
+    assert.deepEqual(calls[0].messages, messages);
+    assert.deepEqual(calls[1].messages.slice(0, -1), messages);
+
+    const retryMessage = calls[1].messages.at(-1);
+    assert.equal(retryMessage?.role, 'user');
+    assert.match(retryMessage?.content ?? '', /previous attempt failed because a tool call used invalid arguments/);
+    assert.match(retryMessage?.content ?? '', /exact tool input schema/);
+    assert.match(retryMessage?.content ?? '', /Do not invent/);
+    assert.match(retryMessage?.content ?? '', /top-level from and to/);
+    assert.match(retryMessage?.content ?? '', /currentFrom, currentTo, baselineFrom, and baselineTo/);
+    assert.match(retryMessage?.content ?? '', /Do not use nested dateRange/);
+    assert.match(retryMessage?.content ?? '', /from1/);
+    assert.match(retryMessage?.content ?? '', /YYYY-MM-DD/);
 
     assert.equal(loggedWarnings.length, 1);
     assert.equal((loggedWarnings[0][0] as { event: string }).event, 'chat.agent_generation_retrying');
@@ -430,7 +468,7 @@ test('ChatService does not retry non-tool generation failures', async () => {
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), {
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
       constructor: InternalServerErrorException,
       message: 'Failed to generate a chat answer.',
     });
@@ -475,7 +513,7 @@ test('ChatService does not fallback for AI retry errors without quota signals', 
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), {
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
       constructor: InternalServerErrorException,
       message: 'Failed to generate a chat answer.',
     });
@@ -520,7 +558,7 @@ test('ChatService maps provider quota failures to Too Many Requests after exhaus
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
 
     assert.equal(calls, 3);
     assert.deepEqual(
@@ -563,7 +601,7 @@ test('ChatService detects provider quota failures from nested causes', async () 
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
 
     assert.equal(loggedWarnings.length, 1);
     assert.equal((loggedWarnings[0][0] as { event: string }).event, 'chat.provider_quota_exceeded');
@@ -610,7 +648,7 @@ test('ChatService maps quota failures during the invalid-tool retry to Too Many 
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), assertProviderQuotaException);
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
 
     assert.equal(calls, 3);
     assert.deepEqual(
@@ -660,7 +698,7 @@ test('ChatService returns the public error when the invalid-tool retry also fail
       },
     });
 
-    await assert.rejects(() => service.answer('Cuanto gaste?'), {
+    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
       constructor: InternalServerErrorException,
       message: 'Failed to generate a chat answer.',
     });

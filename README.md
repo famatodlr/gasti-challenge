@@ -64,12 +64,42 @@ Health check:
 curl -s http://localhost:3001/health
 ```
 
-Chat request:
+Chat request with client-owned conversation context:
 
 ```bash
 curl -s http://localhost:3001/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"Cuanto gaste en supermercado en mayo?"}'
+  -d '{
+    "messages": [
+      {
+        "role": "user",
+        "content": "Comparame mis gastos de mayo de 2026 contra abril de 2026"
+      }
+    ]
+  }'
+```
+
+Follow-up request:
+
+```bash
+curl -s http://localhost:3001/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [
+      {
+        "role": "user",
+        "content": "Comparame mis gastos de mayo de 2026 contra abril de 2026"
+      },
+      {
+        "role": "assistant",
+        "content": "En mayo de 2026, tus gastos fueron de ARS 499.698, lo que representa una disminucion del 19.27% en comparacion con abril de 2026. Salud aumento un 206.2%, Servicios disminuyo un 76.5% y Educacion disminuyo un 100%."
+      },
+      {
+        "role": "user",
+        "content": "Que categoria aumento mas?"
+      }
+    ]
+  }'
 ```
 
 Response shape:
@@ -78,6 +108,16 @@ Response shape:
 {
   "answer": "..."
 }
+```
+
+`POST /chat` is stateless. The `messages` array is conversation context for the current request only; the API does not persist chat history, create user accounts, use vector search, or add long-term memory. The future UI owns the history and should send the full relevant conversation on each request.
+
+For simple one-shot calls, the legacy body shape is still accepted and internally converted to a single user message:
+
+```bash
+curl -s http://localhost:3001/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Cuanto gaste en supermercado en mayo?"}'
 ```
 
 If `GEMINI_API_KEY` is unset or blank, `POST /chat` returns `503` with a missing-key error and does not invoke the model.
@@ -125,6 +165,7 @@ These tools are registered on `gastiFinanceAgent`, which is exposed through the 
 - Deterministic analytics live in `apps/ai/src/mastra/domain`.
 - Mastra tools are thin wrappers: load local data, call analytics, return structured output.
 - The NestJS API stays thin: it validates the chat body, checks `GEMINI_API_KEY`, invokes the Mastra agent, and returns `{ answer }`.
+- The chat API is stateless multi-turn: clients may send `messages[]` history, and the backend uses that history only for the current answer.
 - Gemini model selection uses the default fallback chain unless `GASTI_AI_MODEL` hard-overrides it.
 - Challenge data is local-only mock spending data in ARS from `data/transactions.json`.
 - Raw transaction categories are preserved from the dataset. The domain layer normalizes them into 10 product categories for analytics and tool outputs: `vivienda`, `servicios`, `suscripciones`, `supermercado`, `comida_fuera`, `transporte`, `salud`, `educacion`, `compras`, and `ocio`.

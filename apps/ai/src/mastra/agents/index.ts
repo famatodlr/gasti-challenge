@@ -20,6 +20,11 @@ type GenerateGastiFinanceAgentOptions = {
   modelId?: string;
 };
 
+export type GastiFinanceAgentMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
 type GenerateGastiFinanceAgentResult = {
   text: string;
 };
@@ -93,7 +98,7 @@ export const gastiFinanceAgent = new Agent({
 });
 
 export async function generateGastiFinanceAgent(
-  message: string,
+  messages: string | GastiFinanceAgentMessage[],
   { maxSteps, modelId }: GenerateGastiFinanceAgentOptions = {},
 ): Promise<GenerateGastiFinanceAgentResult> {
   const runtimeContext = new RuntimeContext();
@@ -103,5 +108,5 @@ export async function generateGastiFinanceAgent(
     runtimeContext.set(GASTI_MODEL_RUNTIME_CONTEXT_KEY, trimmedModelId);
   }
 
-  return await gastiFinanceAgent.generate(message, { maxSteps, runtimeContext });
+  return await gastiFinanceAgent.generate(messages, { maxSteps, runtimeContext });
 }

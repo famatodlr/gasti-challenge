@@ -9,6 +9,8 @@ import {
 } from '@nestjs/common';
 import { generateGastiFinanceAgent, getGastiModelFallbackChain } from 'ai/mastra';
 
+import type { ChatMessage } from './chat.types.js';
+
 type AgentGenerateOptions = {
   maxSteps?: number;
   modelId?: string;
@@ -19,13 +21,13 @@ type AgentGenerateResult = {
 };
 
 export type FinanceAgent = {
-  generate: (message: string, options?: AgentGenerateOptions) => Promise<AgentGenerateResult>;
+  generate: (messages: ChatMessage[], options?: AgentGenerateOptions) => Promise<AgentGenerateResult>;
 };
 
 export const GASTI_FINANCE_AGENT = Symbol('GASTI_FINANCE_AGENT');
 
 export const defaultFinanceAgent: FinanceAgent = {
-  generate: (message, options) => generateGastiFinanceAgent(message, options),
+  generate: (messages, options) => generateGastiFinanceAgent(messages, options),
 };
 
 type SerializedAgentError = {
@@ -278,19 +280,27 @@ function isProviderQuotaError(error: unknown, depth = 0): boolean {
   return nestedErrors.some((nestedError) => nestedError !== undefined && isProviderQuotaError(nestedError, depth + 1));
 }
 
-function createInvalidToolArgumentsRetryMessage(message: string): string {
-  return `The previous attempt failed because a tool call used invalid arguments.
-Original user message:
-${message}
+function totalContentLength(messages: readonly ChatMessage[]): number {
+  return messages.reduce((total, message) => total + message.content.length, 0);
+}
 
-Retry the task from scratch. When calling tools, use the exact tool input schema.
+function createInvalidToolArgumentsRetryMessages(messages: readonly ChatMessage[]): ChatMessage[] {
+  return [
+    ...messages,
+    {
+      role: 'user',
+      content: `The previous attempt failed because a tool call used invalid arguments.
+
+Retry the latest user request from the conversation above. When calling tools, use the exact tool input schema.
 Do not invent, rename, or approximate field names.
 For date-bounded tools, use top-level from and to exactly.
 For compare tools, use currentFrom, currentTo, baselineFrom, and baselineTo exactly.
 Do not use nested dateRange unless the tool schema explicitly requires it.
 Do not use fields such as from1, start, end, date_from, or date_to.
 Use ISO dates in YYYY-MM-DD format.
-After the tool succeeds, return the final user-facing answer in Spanish.`;
+After the tool succeeds, return the final user-facing answer in Spanish.`,
+    },
+  ];
 }
 
 @Injectable()
@@ -299,19 +309,23 @@ export class ChatService {
 
   constructor(@Inject(GASTI_FINANCE_AGENT) private readonly agent: FinanceAgent = defaultFinanceAgent) {}
 
-  async answer(message: string): Promise<string> {
+  async answer(messages: ChatMessage[]): Promise<string> {
     if (!process.env.GEMINI_API_KEY?.trim()) {
       throw new ServiceUnavailableException('GEMINI_API_KEY is required to use the chat endpoint.');
     }
 
+    const lastMessage = messages.at(-1);
+
     this.logger.log({
       event: 'chat.request_received',
       message: 'Chat request received',
-      messageLength: message.length,
+      messageCount: messages.length,
+      lastMessageLength: lastMessage?.content.length ?? 0,
+      totalContentLength: totalContentLength(messages),
     });
 
     try {
-      return await this.generateAnswerWithModelFallback(message, 1);
+      return await this.generateAnswerWithModelFallback(messages, 1);
     } catch (error) {
       if (isInvalidToolArgumentsError(error)) {
         this.logger.warn({
@@ -323,7 +337,7 @@ export class ChatService {
         });
 
         try {
-          return await this.generateAnswerWithModelFallback(createInvalidToolArgumentsRetryMessage(message), 2);
+          return await this.generateAnswerWithModelFallback(createInvalidToolArgumentsRetryMessages(messages), 2);
         } catch (retryError) {
           if (retryError instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(retryError)) {
             this.throwProviderQuotaExceeded(retryError);
@@ -341,13 +355,13 @@ export class ChatService {
     }
   }
 
-  private async generateAnswerWithModelFallback(message: string, attempt: number): Promise<string> {
+  private async generateAnswerWithModelFallback(messages: ChatMessage[], attempt: number): Promise<string> {
     const modelIds = getGastiModelFallbackChain();
     const quotaErrors: unknown[] = [];
 
     for (const [modelIndex, modelId] of modelIds.entries()) {
       try {
-        return await this.generateAnswer(message, attempt, modelId, modelIndex, modelIds.length);
+        return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length);
       } catch (error) {
         if (!isProviderQuotaError(error)) {
           throw error;
@@ -387,12 +401,14 @@ export class ChatService {
   }
 
   private async generateAnswer(
-    message: string,
+    messages: ChatMessage[],
     attempt: number,
     modelId: string,
     modelIndex: number,
     modelCount: number,
   ): Promise<string> {
+    const lastMessage = messages.at(-1);
+
     this.logger.log({
       event: 'chat.model_attempt_started',
       message: 'Gemini model attempt started',
@@ -400,10 +416,12 @@ export class ChatService {
       modelId,
       modelIndex: modelIndex + 1,
       modelCount,
-      messageLength: message.length,
+      messageCount: messages.length,
+      lastMessageLength: lastMessage?.content.length ?? 0,
+      totalContentLength: totalContentLength(messages),
     });
 
-    const result = await this.agent.generate(message, { maxSteps: 5, modelId });
+    const result = await this.agent.generate(messages, { maxSteps: 5, modelId });
 
     if (!result.text.trim()) {
       throw new Error('Agent returned an empty answer.');

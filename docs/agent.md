@@ -108,6 +108,8 @@ The tool details and schemas live in `docs/tools.md`.
 
 ## Memory Strategy
 
+Phase 5.5 does not enable Mastra Memory. The API accepts client-supplied `messages[]` history and passes it to the agent as stateless conversation context for a single request. The backend does not persist threads, resources, user accounts, summaries, or embeddings.
+
 Use Mastra Memory if implementation time allows the two small dependencies:
 
 - `@mastra/memory`
