@@ -4,15 +4,23 @@ import { z } from 'zod';
 import { detectRecurringExpenses } from '../domain/analytics.ts';
 import { loadTransactions } from '../domain/transaction-repository.ts';
 import { categorySchema, dateRangeSchema, transactionSchema } from '../domain/transaction.ts';
+import { addDateRangeOrderValidation, flatDateRangeFields, toDateRange } from './date-input.ts';
+
+const detectRecurringExpensesInputSchema = addDateRangeOrderValidation(
+  z
+    .object({
+      ...flatDateRangeFields,
+      minOccurrences: z.number().int().min(2).max(4).default(2),
+      includeVariableRecurring: z.boolean().default(true),
+    })
+    .strict(),
+  [{ fromKey: 'from', toKey: 'to' }],
+);
 
 export const detectRecurringExpensesTool = createTool({
   id: 'detectRecurringExpensesTool',
   description: 'Detect repeated ARS expenses, fixed costs, subscriptions, and likely recurring merchants.',
-  inputSchema: z.object({
-    dateRange: dateRangeSchema.optional(),
-    minOccurrences: z.number().int().min(2).max(4).default(2),
-    includeVariableRecurring: z.boolean().default(true),
-  }),
+  inputSchema: detectRecurringExpensesInputSchema,
   outputSchema: z.object({
     period: dateRangeSchema,
     currency: z.literal('ARS'),
@@ -33,5 +41,12 @@ export const detectRecurringExpensesTool = createTool({
     ),
     caveats: z.array(z.string()),
   }),
-  execute: async ({ context }) => detectRecurringExpenses(loadTransactions(), context),
+  execute: async ({ context }) => {
+    const { from, to, ...input } = context;
+
+    return detectRecurringExpenses(loadTransactions(), {
+      ...input,
+      dateRange: toDateRange({ from, to }),
+    });
+  },
 });

@@ -113,7 +113,7 @@ Stack del starter: **Bun** workspaces + **Turborepo** + **TypeScript** en todo.
 
 ```bash
 bun install
-cp apps/ai/.env.example apps/ai/.env   # agregá tu OPENAI_API_KEY (o el provider que uses)
+cp apps/ai/.env.example apps/ai/.env   # agregá tu GEMINI_API_KEY
 ```
 
 ## Run
