@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   HttpException,
   HttpStatus,
   Inject,
@@ -18,6 +19,10 @@ type AgentGenerateOptions = {
 
 type AgentGenerateResult = {
   text: string;
+  finishReason?: unknown;
+  steps?: unknown;
+  toolCalls?: unknown;
+  toolResults?: unknown;
 };
 
 export type FinanceAgent = {
@@ -40,6 +45,7 @@ type SerializedAgentError = {
 const MAX_CAUSE_DEPTH = 2;
 const REDACTED_SECRET = '[REDACTED]';
 const PROVIDER_QUOTA_EXCEEDED_MESSAGE = 'The AI provider quota was exceeded. Please try again later.';
+const EMPTY_AGENT_ANSWER_MESSAGE = 'The AI provider returned an empty answer. Please try again.';
 const INVALID_TOOL_ARGUMENT_NAME_SIGNALS = ['AI_InvalidToolArgumentsError', 'AI_TypeValidationError'];
 const INVALID_TOOL_ARGUMENT_MESSAGE_SIGNALS = ['Invalid arguments for tool', 'Type validation failed'];
 const PROVIDER_QUOTA_MESSAGE_SIGNALS = [
@@ -55,6 +61,17 @@ type SerializeAgentErrorOptions = {
   maxCauseDepth?: number;
 };
 
+type AgentGenerationMetadata = {
+  modelId: string;
+  textLength: number;
+  finishReason?: string;
+  stepCount?: number;
+  toolCallCount?: number;
+  messageCount: number;
+  lastMessageLength: number;
+  totalContentLength: number;
+};
+
 class GastiModelFallbackExhaustedError extends Error {
   constructor(
     readonly models: readonly string[],
@@ -63,6 +80,24 @@ class GastiModelFallbackExhaustedError extends Error {
   ) {
     super(`All Gemini fallback models were exhausted: ${models.join(', ')}`, { cause });
     this.name = 'GastiModelFallbackExhaustedError';
+  }
+}
+
+class EmptyAgentAnswerError extends Error {
+  constructor(readonly metadata: AgentGenerationMetadata) {
+    super('Agent returned an empty answer.');
+    this.name = 'EmptyAgentAnswerError';
+  }
+}
+
+class GastiEmptyAnswerExhaustedError extends Error {
+  constructor(
+    readonly models: readonly string[],
+    readonly errors: readonly EmptyAgentAnswerError[],
+    cause: unknown,
+  ) {
+    super(`All Gemini fallback models returned empty answers: ${models.join(', ')}`, { cause });
+    this.name = 'GastiEmptyAnswerExhaustedError';
   }
 }
 
@@ -103,6 +138,10 @@ function safeStringify(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function readStringProperty(value: object, key: 'name' | 'message' | 'stack'): string | undefined {
@@ -280,8 +319,54 @@ function isProviderQuotaError(error: unknown, depth = 0): boolean {
   return nestedErrors.some((nestedError) => nestedError !== undefined && isProviderQuotaError(nestedError, depth + 1));
 }
 
+function isEmptyAgentAnswerError(error: unknown): error is EmptyAgentAnswerError {
+  return error instanceof EmptyAgentAnswerError;
+}
+
 function totalContentLength(messages: readonly ChatMessage[]): number {
   return messages.reduce((total, message) => total + message.content.length, 0);
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getArrayLength(value: unknown): number | undefined {
+  return Array.isArray(value) ? value.length : undefined;
+}
+
+function countToolCallsFromSteps(steps: unknown): number | undefined {
+  if (!Array.isArray(steps)) {
+    return undefined;
+  }
+
+  return steps.reduce((total, step) => {
+    if (!isRecord(step) || !Array.isArray(step.toolCalls)) {
+      return total;
+    }
+
+    return total + step.toolCalls.length;
+  }, 0);
+}
+
+function buildAgentGenerationMetadata(
+  result: AgentGenerateResult,
+  messages: readonly ChatMessage[],
+  modelId: string,
+): AgentGenerationMetadata {
+  const lastMessage = messages.at(-1);
+  const topLevelToolCallCount = getArrayLength(result.toolCalls);
+
+  return {
+    modelId,
+    textLength: result.text.length,
+    finishReason: readOptionalString(result.finishReason),
+    stepCount: getArrayLength(result.steps),
+    toolCallCount: topLevelToolCallCount ?? countToolCallsFromSteps(result.steps),
+    messageCount: messages.length,
+    lastMessageLength: lastMessage?.content.length ?? 0,
+    totalContentLength: totalContentLength(messages),
+  };
 }
 
 function createInvalidToolArgumentsRetryMessages(messages: readonly ChatMessage[]): ChatMessage[] {
@@ -343,10 +428,16 @@ export class ChatService {
             this.throwProviderQuotaExceeded(retryError);
           }
 
+          if (retryError instanceof GastiEmptyAnswerExhaustedError || isEmptyAgentAnswerError(retryError)) {
+            this.throwEmptyAgentAnswer(retryError);
+          }
+
           this.logAgentGenerationFailure(retryError);
         }
       } else if (error instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(error)) {
         this.throwProviderQuotaExceeded(error);
+      } else if (error instanceof GastiEmptyAnswerExhaustedError || isEmptyAgentAnswerError(error)) {
+        this.throwEmptyAgentAnswer(error);
       } else {
         this.logAgentGenerationFailure(error);
       }
@@ -358,42 +449,85 @@ export class ChatService {
   private async generateAnswerWithModelFallback(messages: ChatMessage[], attempt: number): Promise<string> {
     const modelIds = getGastiModelFallbackChain();
     const quotaErrors: unknown[] = [];
+    const emptyAnswerErrors: EmptyAgentAnswerError[] = [];
 
     for (const [modelIndex, modelId] of modelIds.entries()) {
       try {
         return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length);
       } catch (error) {
-        if (!isProviderQuotaError(error)) {
-          throw error;
-        }
+        if (isProviderQuotaError(error)) {
+          quotaErrors.push(error);
+          const nextModelId = modelIds[modelIndex + 1];
 
-        quotaErrors.push(error);
-        const nextModelId = modelIds[modelIndex + 1];
+          if (nextModelId) {
+            this.logger.warn({
+              event: 'chat.model_fallback_retrying',
+              message: 'Gemini model quota exhausted, retrying with fallback model',
+              attempt,
+              modelId,
+              nextModelId,
+              modelIndex: modelIndex + 1,
+              modelCount: modelIds.length,
+              error: serializeAgentError(error, 0, { includeStack: false, maxCauseDepth: 1 }),
+            });
 
-        if (nextModelId) {
-          this.logger.warn({
-            event: 'chat.model_fallback_retrying',
-            message: 'Gemini model quota exhausted, retrying with fallback model',
-            attempt,
-            modelId,
-            nextModelId,
-            modelIndex: modelIndex + 1,
-            modelCount: modelIds.length,
-            error: serializeAgentError(error, 0, { includeStack: false, maxCauseDepth: 1 }),
+            continue;
+          }
+
+          const exhaustedError = new GastiModelFallbackExhaustedError(modelIds, quotaErrors, error);
+          this.logger.error({
+            event: 'chat.model_fallback_exhausted',
+            message: 'All Gemini fallback models failed with quota or rate-limit errors',
+            modelIds,
+            error: serializeAgentError(exhaustedError, 0, { includeStack: false, maxCauseDepth: 1 }),
           });
 
-          continue;
+          throw exhaustedError;
         }
 
-        const exhaustedError = new GastiModelFallbackExhaustedError(modelIds, quotaErrors, error);
-        this.logger.error({
-          event: 'chat.model_fallback_exhausted',
-          message: 'All Gemini fallback models failed with quota or rate-limit errors',
-          modelIds,
-          error: serializeAgentError(exhaustedError, 0, { includeStack: false, maxCauseDepth: 1 }),
-        });
+        if (isEmptyAgentAnswerError(error)) {
+          emptyAnswerErrors.push(error);
+          const nextModelId = modelIds[modelIndex + 1];
 
-        throw exhaustedError;
+          if (nextModelId) {
+            this.logger.warn({
+              event: 'chat.model_fallback_retrying',
+              message: 'Gemini model returned an empty answer, retrying with fallback model',
+              attempt,
+              modelId,
+              nextModelId,
+              modelIndex: modelIndex + 1,
+              modelCount: modelIds.length,
+              reason: 'empty_answer',
+              generation: error.metadata,
+            });
+
+            continue;
+          }
+
+          this.logger.warn({
+            event: 'chat.empty_answer_final_model_retrying',
+            message: 'Final Gemini model returned an empty answer, retrying the same model once',
+            attempt,
+            modelId,
+            modelIndex: modelIndex + 1,
+            modelCount: modelIds.length,
+            generation: error.metadata,
+          });
+
+          try {
+            return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length);
+          } catch (retryError) {
+            if (isEmptyAgentAnswerError(retryError)) {
+              emptyAnswerErrors.push(retryError);
+              this.throwEmptyAnswerExhausted(modelIds, emptyAnswerErrors, retryError);
+            }
+
+            throw retryError;
+          }
+        }
+
+        throw error;
       }
     }
 
@@ -422,20 +556,50 @@ export class ChatService {
     });
 
     const result = await this.agent.generate(messages, { maxSteps: 5, modelId });
+    const generation = buildAgentGenerationMetadata(result, messages, modelId);
 
     if (!result.text.trim()) {
-      throw new Error('Agent returned an empty answer.');
+      this.logger.warn({
+        event: 'chat.model_attempt_empty',
+        message: 'Gemini model attempt returned an empty answer',
+        attempt,
+        modelIndex: modelIndex + 1,
+        modelCount,
+        ...generation,
+      });
+
+      throw new EmptyAgentAnswerError(generation);
     }
 
     this.logger.log({
       event: 'chat.model_attempt_succeeded',
       message: 'Gemini model attempt succeeded',
       attempt,
-      modelId,
+      modelIndex: modelIndex + 1,
+      modelCount,
       responseLength: result.text.length,
+      ...generation,
     });
 
     return result.text;
+  }
+
+  private throwEmptyAnswerExhausted(
+    modelIds: readonly string[],
+    emptyAnswerErrors: readonly EmptyAgentAnswerError[],
+    cause: unknown,
+  ): never {
+    const exhaustedError = new GastiEmptyAnswerExhaustedError(modelIds, emptyAnswerErrors, cause);
+
+    this.logger.error({
+      event: 'chat.empty_answer_exhausted',
+      message: 'All Gemini fallback models returned empty answers',
+      modelIds,
+      emptyAnswerAttempts: emptyAnswerErrors.map((error) => error.metadata),
+      error: serializeAgentError(exhaustedError, 0, { includeStack: false, maxCauseDepth: 1 }),
+    });
+
+    throw exhaustedError;
   }
 
   private logAgentGenerationFailure(error: unknown): void {
@@ -456,5 +620,17 @@ export class ChatService {
     });
 
     throw new HttpException(PROVIDER_QUOTA_EXCEEDED_MESSAGE, HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  private throwEmptyAgentAnswer(error: unknown): never {
+    this.logger.warn({
+      event: 'chat.empty_answer_public_error',
+      message: 'AI provider returned an empty answer',
+      provider: 'gemini',
+      retryable: true,
+      error: serializeAgentError(error, 0, { includeStack: false, maxCauseDepth: 1 }),
+    });
+
+    throw new BadGatewayException(EMPTY_AGENT_ANSWER_MESSAGE);
   }
 }

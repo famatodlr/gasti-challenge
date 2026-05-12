@@ -11,6 +11,7 @@ import {
 import { ChatService } from './chat.service.ts';
 
 const PROVIDER_QUOTA_MESSAGE = 'The AI provider quota was exceeded. Please try again later.';
+const EMPTY_ANSWER_MESSAGE = 'The AI provider returned an empty answer. Please try again.';
 const AI_ENV_KEYS = ['GEMINI_API_KEY', 'GASTI_AI_MODEL', 'GASTI_AI_MODEL_FALLBACK_CHAIN'] as const;
 
 type AiEnvKey = (typeof AI_ENV_KEYS)[number];
@@ -377,6 +378,193 @@ test('ChatService logs agent generation failures without changing the public err
     } else {
       process.env.GEMINI_API_KEY = previousKey;
     }
+  }
+});
+
+test('ChatService logs successful generation metadata without raw messages or tool results', async () => {
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
+  const originalLoggerLog = Logger.prototype.log;
+  const loggedInfo: unknown[][] = [];
+  Logger.prototype.log = function (...args: unknown[]) {
+    loggedInfo.push(args);
+  };
+
+  try {
+    const service = new ChatService({
+      generate: async () => ({
+        text: 'Respuesta con datos.',
+        finishReason: 'stop',
+        toolCalls: [
+          {
+            toolName: 'findTransactionsTool',
+            args: { merchant: 'Rappi' },
+          },
+        ],
+        toolResults: [
+          {
+            result: {
+              transactions: [{ id: 'txn_001', merchant: 'Rappi' }],
+            },
+          },
+        ],
+        steps: [
+          {
+            text: '',
+            finishReason: 'tool-calls',
+            toolCalls: [{ toolName: 'findTransactionsTool' }],
+          },
+          {
+            text: 'Respuesta con datos.',
+            finishReason: 'stop',
+            toolCalls: [],
+          },
+        ],
+      }),
+    });
+
+    assert.equal(await service.answer(userConversation('Cuanto gaste en Rappi?')), 'Respuesta con datos.');
+
+    const successLog = loggedInfo
+      .map(([payload]) => payload as { event?: string; [key: string]: unknown })
+      .find((payload) => payload.event === 'chat.model_attempt_succeeded');
+
+    assert.ok(successLog);
+    assert.equal(successLog.modelId, 'gemini-fixed');
+    assert.equal(successLog.textLength, 'Respuesta con datos.'.length);
+    assert.equal(successLog.finishReason, 'stop');
+    assert.equal(successLog.stepCount, 2);
+    assert.equal(successLog.toolCallCount, 1);
+    assert.equal(successLog.messageCount, 1);
+
+    const serializedLogs = JSON.stringify(loggedInfo);
+    assert.equal(serializedLogs.includes('Cuanto gaste en Rappi?'), false);
+    assert.equal(serializedLogs.includes('txn_001'), false);
+    assert.equal(serializedLogs.includes('"merchant":"Rappi"'), false);
+  } finally {
+    Logger.prototype.log = originalLoggerLog;
+    restoreEnv();
+  }
+});
+
+test('ChatService falls back after an empty agent answer and logs safe metadata', async () => {
+  const restoreEnv = useTestAiEnv({
+    GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-empty,gemini-success',
+  });
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  const loggedWarnings: unknown[][] = [];
+  Logger.prototype.warn = function (...args: unknown[]) {
+    loggedWarnings.push(args);
+  };
+
+  try {
+    const calls: CapturedGenerateCall[] = [];
+    const service = new ChatService({
+      generate: async (receivedMessages, options) => {
+        calls.push({
+          messages: copyMessages(receivedMessages),
+          modelId: options?.modelId,
+          maxSteps: options?.maxSteps,
+        });
+
+        if (options?.modelId === 'gemini-empty') {
+          return {
+            text: '   ',
+            finishReason: 'stop',
+            steps: [
+              {
+                finishReason: 'tool-calls',
+                toolCalls: [{ toolName: 'spendingSummaryTool' }, { toolName: 'getFinanceContext' }],
+              },
+            ],
+          };
+        }
+
+        return { text: 'Respuesta recuperada.' };
+      },
+    });
+
+    assert.equal(await service.answer(userConversation('Cuanto gaste?')), 'Respuesta recuperada.');
+    assert.deepEqual(
+      calls.map((call) => call.modelId),
+      ['gemini-empty', 'gemini-success'],
+    );
+
+    const warningPayloads = loggedWarnings.map(([payload]) => payload as { event?: string; [key: string]: unknown });
+    const emptyLog = warningPayloads.find((payload) => payload.event === 'chat.model_attempt_empty');
+
+    assert.ok(emptyLog);
+    assert.equal(emptyLog.modelId, 'gemini-empty');
+    assert.equal(emptyLog.textLength, 3);
+    assert.equal(emptyLog.finishReason, 'stop');
+    assert.equal(emptyLog.stepCount, 1);
+    assert.equal(emptyLog.toolCallCount, 2);
+    assert.ok(warningPayloads.some((payload) => payload.event === 'chat.model_fallback_retrying'));
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService returns a clean public error after the final model repeats empty answers', async () => {
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-empty' });
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  const originalLoggerError = Logger.prototype.error;
+  const loggedWarnings: unknown[][] = [];
+  const loggedErrors: unknown[][] = [];
+  Logger.prototype.warn = function (...args: unknown[]) {
+    loggedWarnings.push(args);
+  };
+  Logger.prototype.error = function (...args: unknown[]) {
+    loggedErrors.push(args);
+  };
+
+  try {
+    const calls: string[] = [];
+    const service = new ChatService({
+      generate: async (_messages, options) => {
+        calls.push(options?.modelId ?? '');
+
+        return {
+          text: '',
+          finishReason: 'stop',
+          toolCalls: [],
+          steps: [{ finishReason: 'stop', toolCalls: [] }],
+        };
+      },
+    });
+
+    await assert.rejects(
+      () => service.answer(userConversation('Cuanto gaste?')),
+      (error: unknown): boolean => {
+        assert.ok(error instanceof HttpException);
+        assert.equal(error.getStatus(), HttpStatus.BAD_GATEWAY);
+        const response = error.getResponse();
+
+        if (typeof response === 'string') {
+          assert.equal(response, EMPTY_ANSWER_MESSAGE);
+        } else {
+          assert.equal((response as { message: string }).message, EMPTY_ANSWER_MESSAGE);
+        }
+
+        return true;
+      },
+    );
+
+    assert.deepEqual(calls, ['gemini-empty', 'gemini-empty']);
+    assert.equal(
+      loggedWarnings.filter(([payload]) => (payload as { event?: string }).event === 'chat.model_attempt_empty')
+        .length,
+      2,
+    );
+    assert.ok(loggedErrors.some(([payload]) => (payload as { event?: string }).event === 'chat.empty_answer_exhausted'));
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
+    Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
+    restoreEnv();
   }
 });
 
