@@ -23,6 +23,7 @@ Assumptions for the challenge build:
 - Mock transactions only.
 - Expense analysis only. Income can be provided by the user during chat, but it is not stored in the transaction dataset.
 - Spanish-first tone, with English responses when the user writes in English.
+- No persistent memory in the current version. The backend only uses the visible chat history sent in the current request.
 
 ## Product Principles
 
@@ -111,11 +112,11 @@ Expected answer:
 - Date, merchant, description, category, amount.
 - Sort order that matches the question.
 
-### 6. Lightweight Personalization
+### 6. Lightweight Personalization (Future, Not Implemented)
 
-Gasti remembers user preferences that affect future answers: preferred language, categories to watch, monthly income if the user volunteers it, and answer style.
+Future versions could remember user preferences that affect later answers: preferred language, categories to watch, monthly income if the user volunteers it, and answer style.
 
-It should not memorize raw transaction rows. Transaction truth comes from tools reading the dataset.
+That future memory should not store raw transaction rows. Transaction truth should continue to come from tools reading the dataset.
 
 ## Non-Goals
 
@@ -139,4 +140,3 @@ Important UI behavior:
 - Use ARS formatting consistently.
 - Give graceful caveats when the dataset does not contain enough history.
 - Keep suggested prompts specific to the mock data.
-

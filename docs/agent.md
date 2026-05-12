@@ -2,7 +2,7 @@
 
 ## Current Repo Context
 
-The starter has a placeholder Mastra agent in `apps/ai/src/mastra/agents/index.ts` and registers it from `apps/ai/src/mastra/index.ts`. The implementation should replace that placeholder with one finance assistant agent and register tools through Mastra's `Agent` configuration.
+Gasti has one Mastra finance agent, `gastiFinanceAgent`, implemented in `apps/ai/src/mastra/agents/index.ts` and registered from `apps/ai/src/mastra/index.ts`. The agent uses Mastra's `Agent` configuration with deterministic finance tools registered in its `tools` property.
 
 Mastra is mandatory. The app must use Mastra's `Agent`, `createTool` with schemas, and Mastra-managed tool selection. Do not build a custom loop that asks the model which tool to call and then dispatches tools manually.
 
@@ -11,7 +11,7 @@ References checked:
 - Mastra Agent class: https://mastra.ai/reference/agents/agent
 - Mastra tools guide: https://mastra.ai/docs/agents/using-tools
 - Mastra `createTool` reference: https://mastra.ai/reference/tools/create-tool
-- Mastra memory overview: https://mastra.ai/docs/memory/overview
+- Mastra Memory overview for future evolution: https://mastra.ai/docs/memory/overview
 
 ## Agent Name
 
@@ -25,12 +25,11 @@ The agent should:
 
 - Interpret personal finance questions in Spanish or English.
 - Decide when to call spending, comparison, recurring-expense, forecast, or transaction-search tools.
-- Ground financial answers in tool results instead of guessing from memory.
+- Ground financial answers in tool results instead of guessing.
 - Use exact date ranges and explain assumptions when the user says "este mes", "la ultima semana", or "a este ritmo".
 - Format money in ARS.
 - Present concise, useful answers with 1-3 concrete observations.
 - Ask a focused follow-up only when a required input is missing, such as monthly income for a budget-gap calculation.
-- Remember lightweight user preferences through Mastra Memory when available.
 - Refuse or redirect investment, tax, legal, or banking actions outside the mock dataset.
 
 The agent should not:
@@ -85,10 +84,6 @@ Tool-calling rules:
 - If the user mentions a month without a year, infer the year from the available mock dataset or existing project convention, and use the full month date range.
 - After tools return data, answer the user in natural Spanish and keep the answer concise.
 
-Memory:
-- Remember user preferences, goals, monthly income if volunteered, categories to watch, and preferred answer style.
-- Do not store raw transaction rows in memory. The transaction dataset is the source of truth.
-
 Boundaries:
 - You can help analyze spending and suggest tradeoffs.
 - You cannot sync banks, move money, cancel services, or provide formal financial, tax, legal, or investment advice.
@@ -106,23 +101,27 @@ Register these tools on the agent:
 
 The tool details and schemas live in `docs/tools.md`.
 
-## Memory Strategy
+## Current Conversation Context
 
-Phase 5.5 does not enable Mastra Memory. The API accepts client-supplied `messages[]` history and passes it to the agent as stateless conversation context for a single request. The backend does not persist threads, resources, user accounts, summaries, or embeddings.
+The current version does not implement persistent Mastra Memory. The API accepts client-supplied `messages[]` history and passes it to the agent as stateless conversation context for a single request. The backend does not persist threads, resources, user accounts, summaries, embeddings, or user preferences.
 
-Use Mastra Memory if implementation time allows the two small dependencies:
+## Future Evolution: Mastra Memory
+
+Mastra Memory is a future product evolution, not a current feature.
+
+If implemented later, it would require the two small dependencies:
 
 - `@mastra/memory`
 - `@mastra/libsql`
 
-Recommended first implementation:
+Recommended first future implementation:
 
 - Add a shared LibSQL storage adapter in `apps/ai/src/mastra/index.ts`.
 - Add `memory: new Memory()` to `gastiFinanceAgent`.
 - Pass `memory: { thread, resource }` when the API invokes the agent.
 - Use one stable demo `resource`, such as `demo-user`, and a generated `thread` from the UI.
 
-Memory should store:
+Future memory should store:
 
 - Preferred language.
 - Preferred answer length.
@@ -131,7 +130,7 @@ Memory should store:
 - Categories the user wants to watch.
 - Known recurring expenses the user explicitly says are important or unwanted.
 
-Memory should not store:
+Future memory should not store:
 
 - Raw transaction rows.
 - API keys or secrets.
@@ -153,7 +152,7 @@ Working memory template:
 - Notes explicitly provided by the user:
 ```
 
-Semantic recall is optional for this challenge. The first shippable version can use conversation history and working memory only. If semantic recall is added, keep it scoped to conversation context, not transaction storage.
+Semantic recall should stay optional. If it is added later, keep it scoped to conversation context, not transaction storage.
 
 ## Workflow Strategy
 
