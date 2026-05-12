@@ -8,6 +8,7 @@ export {
   getGastiModelFallbackChain,
   getGastiModelId,
   getGeminiApiKey,
+  streamGastiFinanceAgent,
 } from './agents/index.ts';
 
 export const mastra: Mastra = new Mastra({

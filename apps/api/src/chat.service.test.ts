@@ -24,6 +24,7 @@ type CapturedGenerateCall = {
   modelId?: string;
   maxSteps?: number;
 };
+type TestStreamChunk = Record<string, unknown>;
 
 function userConversation(content: string): TestChatMessage[] {
   return [{ role: 'user', content }];
@@ -43,6 +44,12 @@ function comparisonFollowUpConversation(): TestChatMessage[] {
 
 function copyMessages(messages: readonly TestChatMessage[]): TestChatMessage[] {
   return messages.map((message) => ({ ...message }));
+}
+
+async function* streamChunks(chunks: readonly TestStreamChunk[]): AsyncGenerator<TestStreamChunk> {
+  for (const chunk of chunks) {
+    yield chunk;
+  }
 }
 
 function restoreAiEnv(snapshot: Record<AiEnvKey, string | undefined>): void {
@@ -442,6 +449,143 @@ test('ChatService logs successful generation metadata without raw messages or to
     assert.equal(serializedLogs.includes('"merchant":"Rappi"'), false);
   } finally {
     Logger.prototype.log = originalLoggerLog;
+    restoreEnv();
+  }
+});
+
+test('ChatService streams safe Spanish activity events without leaking raw stream payloads', async () => {
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
+  const restoreLoggerLog = silenceInfoLogs();
+  const secret = process.env.GEMINI_API_KEY ?? '';
+
+  try {
+    const service = new ChatService({
+      generate: async () => {
+        throw new Error('generate should not be called by streamAnswerEvents');
+      },
+      stream: async () => ({
+        fullStream: streamChunks([
+          {
+            type: 'tool-call-streaming-start',
+            toolCallId: 'call_1',
+            toolName: 'findTransactionsTool',
+          },
+          {
+            type: 'tool-call-delta',
+            toolCallId: 'call_1',
+            toolName: 'findTransactionsTool',
+            argsTextDelta: '{"merchant":"Rappi"}',
+          },
+          {
+            type: 'tool-call',
+            toolCallId: 'call_1',
+            toolName: 'findTransactionsTool',
+            args: { merchant: 'Rappi', secret },
+          },
+          {
+            type: 'tool-result',
+            toolCallId: 'call_1',
+            toolName: 'findTransactionsTool',
+            result: { transactions: [{ id: 'txn_001', merchant: 'Rappi', secret }] },
+          },
+          { type: 'reasoning', textDelta: 'private reasoning' },
+          { type: 'reasoning-signature', signature: 'signed-private-reasoning' },
+          { type: 'redacted-reasoning', data: 'redacted-private-reasoning' },
+          { type: 'source', source: { url: 'https://example.test/private-source' } },
+          { type: 'file', mimeType: 'text/plain', base64: 'private-file', uint8Array: new Uint8Array() },
+          {
+            type: 'step-finish',
+            providerMetadata: { privateProviderData: secret },
+            usage: { promptTokens: 1, completionTokens: 1 },
+          },
+          { type: 'text-delta', textDelta: 'Respuesta ' },
+          { type: 'text-delta', textDelta: 'lista.' },
+          { type: 'finish', finishReason: 'stop', providerMetadata: { privateProviderData: secret } },
+        ]),
+      }),
+    } as never);
+
+    const events = [];
+
+    for await (const event of service.streamAnswerEvents(userConversation('Mostrame gastos en Rappi'))) {
+      events.push(event);
+    }
+
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ['status', 'tool_call', 'tool_result', 'status', 'final_answer'],
+    );
+    assert.deepEqual(
+      events.map((event) => event.label),
+      [
+        'Analizando consulta',
+        'Consultando herramienta',
+        'Herramienta completada',
+        'Generando respuesta final',
+        'Respuesta final generada',
+      ],
+    );
+    assert.equal(events[1].toolName, 'findTransactionsTool');
+    assert.equal(events[2].toolName, 'findTransactionsTool');
+    assert.equal(events.at(-1)?.answer, 'Respuesta lista.');
+
+    const serializedEvents = JSON.stringify(events);
+    assert.equal(serializedEvents.includes('Rappi'), false);
+    assert.equal(serializedEvents.includes('txn_001'), false);
+    assert.equal(serializedEvents.includes('private reasoning'), false);
+    assert.equal(serializedEvents.includes('signed-private-reasoning'), false);
+    assert.equal(serializedEvents.includes('redacted-private-reasoning'), false);
+    assert.equal(serializedEvents.includes('private-source'), false);
+    assert.equal(serializedEvents.includes('private-file'), false);
+    assert.equal(serializedEvents.includes('privateProviderData'), false);
+    assert.equal(serializedEvents.includes(secret), false);
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService emits a Spanish warning before retrying invalid tool arguments in streaming mode', async () => {
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    let calls = 0;
+    const invalidToolError = new Error('Invalid arguments for tool spendingSummaryTool');
+    invalidToolError.name = 'AI_InvalidToolArgumentsError';
+    const service = new ChatService({
+      generate: async () => {
+        throw new Error('generate should not be called by streamAnswerEvents');
+      },
+      stream: async () => {
+        calls += 1;
+
+        if (calls === 1) {
+          throw invalidToolError;
+        }
+
+        return {
+          fullStream: streamChunks([{ type: 'text-delta', textDelta: 'Respuesta recuperada.' }]),
+        };
+      },
+    } as never);
+
+    const events = [];
+
+    for await (const event of service.streamAnswerEvents(userConversation('Cuanto gaste?'))) {
+      events.push(event);
+    }
+
+    assert.equal(calls, 2);
+    assert.ok(
+      events.some(
+        (event) => event.type === 'warning' && event.label === 'Reintentando por argumentos inválidos',
+      ),
+    );
+    assert.equal(events.at(-1)?.type, 'final_answer');
+    assert.equal(events.at(-1)?.answer, 'Respuesta recuperada.');
+  } finally {
+    restoreLoggerLog();
     restoreEnv();
   }
 });

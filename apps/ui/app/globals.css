@@ -7,12 +7,13 @@
 }
 
 html {
-  background: #f3f6f4;
+  background: #050706;
 }
 
 body {
   min-height: 100vh;
   margin: 0;
+  background: #050706;
 }
 
 button,

@@ -8,14 +8,16 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { generateGastiFinanceAgent, getGastiModelFallbackChain } from 'ai/mastra';
+import { generateGastiFinanceAgent, getGastiModelFallbackChain, streamGastiFinanceAgent } from 'ai/mastra';
 
-import type { ChatMessage } from './chat.types.js';
+import type { ChatActivityEvent, ChatMessage, ChatResponseBody } from './chat.types.js';
 
 type AgentGenerateOptions = {
   maxSteps?: number;
   modelId?: string;
 };
+
+type AgentStreamOptions = AgentGenerateOptions;
 
 type AgentGenerateResult = {
   text: string;
@@ -25,14 +27,20 @@ type AgentGenerateResult = {
   toolResults?: unknown;
 };
 
+type AgentStreamResult = {
+  fullStream: AsyncIterable<unknown>;
+};
+
 export type FinanceAgent = {
   generate: (messages: ChatMessage[], options?: AgentGenerateOptions) => Promise<AgentGenerateResult>;
+  stream: (messages: ChatMessage[], options?: AgentStreamOptions) => Promise<AgentStreamResult>;
 };
 
 export const GASTI_FINANCE_AGENT = Symbol('GASTI_FINANCE_AGENT');
 
 export const defaultFinanceAgent: FinanceAgent = {
   generate: (messages, options) => generateGastiFinanceAgent(messages, options),
+  stream: (messages, options) => streamGastiFinanceAgent(messages, options),
 };
 
 type SerializedAgentError = {
@@ -46,8 +54,19 @@ const MAX_CAUSE_DEPTH = 2;
 const REDACTED_SECRET = '[REDACTED]';
 const PROVIDER_QUOTA_EXCEEDED_MESSAGE = 'The AI provider quota was exceeded. Please try again later.';
 const EMPTY_AGENT_ANSWER_MESSAGE = 'The AI provider returned an empty answer. Please try again.';
+const PUBLIC_PROVIDER_QUOTA_EXCEEDED_LABEL = 'Se excedió la cuota del proveedor de IA. Intentá de nuevo más tarde.';
+const PUBLIC_EMPTY_AGENT_ANSWER_LABEL = 'El proveedor de IA devolvió una respuesta vacía. Intentá de nuevo.';
+const PUBLIC_AGENT_GENERATION_FAILED_LABEL = 'No pude generar una respuesta. Intentá de nuevo.';
 const INVALID_TOOL_ARGUMENT_NAME_SIGNALS = ['AI_InvalidToolArgumentsError', 'AI_TypeValidationError'];
 const INVALID_TOOL_ARGUMENT_MESSAGE_SIGNALS = ['Invalid arguments for tool', 'Type validation failed'];
+const ACTIVITY_ANALYZING_LABEL = 'Analizando consulta';
+const ACTIVITY_TOOL_CALL_LABEL = 'Consultando herramienta';
+const ACTIVITY_TOOL_RESULT_LABEL = 'Herramienta completada';
+const ACTIVITY_INVALID_TOOL_RETRY_LABEL = 'Reintentando por argumentos inválidos';
+const ACTIVITY_GENERATING_FINAL_LABEL = 'Generando respuesta final';
+const ACTIVITY_FINAL_ANSWER_LABEL = 'Respuesta final generada';
+const ACTIVITY_MODEL_FALLBACK_LABEL = 'Reintentando con otro modelo';
+const ACTIVITY_EMPTY_ANSWER_RETRY_LABEL = 'Reintentando respuesta vacía';
 const PROVIDER_QUOTA_MESSAGE_SIGNALS = [
   'exceeded your current quota',
   'Quota exceeded',
@@ -369,6 +388,181 @@ function buildAgentGenerationMetadata(
   };
 }
 
+function createActivityEvent(
+  type: ChatActivityEvent['type'],
+  label: string,
+  details: Pick<ChatActivityEvent, 'toolName' | 'answer'> = {},
+): ChatActivityEvent {
+  return {
+    type,
+    label,
+    timestamp: new Date().toISOString(),
+    ...details,
+  };
+}
+
+function readRecordString(value: unknown, key: string): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const property = value[key];
+  return typeof property === 'string' && property.trim() ? property.trim() : undefined;
+}
+
+function readToolName(value: unknown): string | undefined {
+  return readRecordString(value, 'toolName');
+}
+
+function readToolCallId(value: unknown): string | undefined {
+  return readRecordString(value, 'toolCallId');
+}
+
+function readChunkType(value: unknown): string | undefined {
+  return readRecordString(value, 'type');
+}
+
+function readTextDelta(value: unknown): string {
+  if (!isRecord(value)) {
+    return '';
+  }
+
+  return typeof value.textDelta === 'string' ? value.textDelta : '';
+}
+
+function readStreamError(value: unknown): unknown {
+  return isRecord(value) && Object.prototype.hasOwnProperty.call(value, 'error') ? value.error : value;
+}
+
+function getPublicStreamErrorLabel(error: unknown): string {
+  if (error instanceof GastiEmptyAnswerExhaustedError || isEmptyAgentAnswerError(error)) {
+    return PUBLIC_EMPTY_AGENT_ANSWER_LABEL;
+  }
+
+  if (error instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(error)) {
+    return PUBLIC_PROVIDER_QUOTA_EXCEEDED_LABEL;
+  }
+
+  if (error instanceof HttpException) {
+    const response = error.getResponse();
+
+    if (typeof response === 'string' && response.trim()) {
+      return response;
+    }
+
+    if (isRecord(response) && typeof response.message === 'string' && response.message.trim()) {
+      return response.message;
+    }
+  }
+
+  return PUBLIC_AGENT_GENERATION_FAILED_LABEL;
+}
+
+class ActivityEventCollector {
+  private readonly emittedToolCalls = new Set<string>();
+  private readonly emittedToolResults = new Set<string>();
+  private nextToolCallFallbackIndex = 0;
+  private nextToolResultFallbackIndex = 0;
+  private generatingFinalAnswer = false;
+
+  constructor(private readonly events: ChatActivityEvent[] = []) {}
+
+  get collectedEvents(): ChatActivityEvent[] {
+    return this.events;
+  }
+
+  addStatus(label: string): ChatActivityEvent {
+    return this.addEvent(createActivityEvent('status', label));
+  }
+
+  addWarning(label: string): ChatActivityEvent {
+    return this.addEvent(createActivityEvent('warning', label));
+  }
+
+  addError(label: string): ChatActivityEvent {
+    return this.addEvent(createActivityEvent('error', label));
+  }
+
+  addFinalAnswer(answer: string): ChatActivityEvent {
+    return this.addEvent(createActivityEvent('final_answer', ACTIVITY_FINAL_ANSWER_LABEL, { answer }));
+  }
+
+  addGeneratingFinalAnswerOnce(): ChatActivityEvent | null {
+    if (this.generatingFinalAnswer) {
+      return null;
+    }
+
+    this.generatingFinalAnswer = true;
+    return this.addStatus(ACTIVITY_GENERATING_FINAL_LABEL);
+  }
+
+  addToolCall(toolName: string | undefined, toolCallId: string | undefined): ChatActivityEvent | null {
+    if (!toolName) {
+      return null;
+    }
+
+    const key = toolCallId ?? `${toolName}:${this.nextToolCallFallbackIndex++}`;
+
+    if (this.emittedToolCalls.has(key)) {
+      return null;
+    }
+
+    this.emittedToolCalls.add(key);
+    return this.addEvent(createActivityEvent('tool_call', ACTIVITY_TOOL_CALL_LABEL, { toolName }));
+  }
+
+  addToolResult(toolName: string | undefined, toolCallId: string | undefined): ChatActivityEvent | null {
+    if (!toolName) {
+      return null;
+    }
+
+    const key = toolCallId ?? `${toolName}:${this.nextToolResultFallbackIndex++}`;
+
+    if (this.emittedToolResults.has(key)) {
+      return null;
+    }
+
+    this.emittedToolResults.add(key);
+    return this.addEvent(createActivityEvent('tool_result', ACTIVITY_TOOL_RESULT_LABEL, { toolName }));
+  }
+
+  addGenerateResult(result: AgentGenerateResult): void {
+    const steps = Array.isArray(result.steps) ? result.steps : [];
+
+    for (const step of steps) {
+      if (!isRecord(step)) {
+        continue;
+      }
+
+      this.addToolEventsFromArray(step.toolCalls, 'call');
+      this.addToolEventsFromArray(step.toolResults, 'result');
+    }
+
+    this.addToolEventsFromArray(result.toolCalls, 'call');
+    this.addToolEventsFromArray(result.toolResults, 'result');
+    this.addGeneratingFinalAnswerOnce();
+  }
+
+  private addToolEventsFromArray(value: unknown, kind: 'call' | 'result'): void {
+    if (!Array.isArray(value)) {
+      return;
+    }
+
+    for (const toolEvent of value) {
+      if (kind === 'call') {
+        this.addToolCall(readToolName(toolEvent), readToolCallId(toolEvent));
+      } else {
+        this.addToolResult(readToolName(toolEvent), readToolCallId(toolEvent));
+      }
+    }
+  }
+
+  private addEvent(event: ChatActivityEvent): ChatActivityEvent {
+    this.events.push(event);
+    return event;
+  }
+}
+
 function createInvalidToolArgumentsRetryMessages(messages: readonly ChatMessage[]): ChatMessage[] {
   return [
     ...messages,
@@ -395,11 +589,17 @@ export class ChatService {
   constructor(@Inject(GASTI_FINANCE_AGENT) private readonly agent: FinanceAgent = defaultFinanceAgent) {}
 
   async answer(messages: ChatMessage[]): Promise<string> {
+    return (await this.answerWithSteps(messages)).answer;
+  }
+
+  async answerWithSteps(messages: ChatMessage[]): Promise<ChatResponseBody> {
     if (!process.env.GEMINI_API_KEY?.trim()) {
       throw new ServiceUnavailableException('GEMINI_API_KEY is required to use the chat endpoint.');
     }
 
     const lastMessage = messages.at(-1);
+    const activity = new ActivityEventCollector();
+    activity.addStatus(ACTIVITY_ANALYZING_LABEL);
 
     this.logger.log({
       event: 'chat.request_received',
@@ -410,7 +610,10 @@ export class ChatService {
     });
 
     try {
-      return await this.generateAnswerWithModelFallback(messages, 1);
+      const answer = await this.generateAnswerWithModelFallback(messages, 1, activity);
+      activity.addFinalAnswer(answer);
+
+      return { answer, steps: activity.collectedEvents };
     } catch (error) {
       if (isInvalidToolArgumentsError(error)) {
         this.logger.warn({
@@ -420,9 +623,17 @@ export class ChatService {
           nextAttempt: 2,
           error: serializeAgentError(error),
         });
+        activity.addWarning(ACTIVITY_INVALID_TOOL_RETRY_LABEL);
 
         try {
-          return await this.generateAnswerWithModelFallback(createInvalidToolArgumentsRetryMessages(messages), 2);
+          const answer = await this.generateAnswerWithModelFallback(
+            createInvalidToolArgumentsRetryMessages(messages),
+            2,
+            activity,
+          );
+          activity.addFinalAnswer(answer);
+
+          return { answer, steps: activity.collectedEvents };
         } catch (retryError) {
           if (retryError instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(retryError)) {
             this.throwProviderQuotaExceeded(retryError);
@@ -446,14 +657,63 @@ export class ChatService {
     }
   }
 
-  private async generateAnswerWithModelFallback(messages: ChatMessage[], attempt: number): Promise<string> {
+  async *streamAnswerEvents(messages: ChatMessage[]): AsyncGenerator<ChatActivityEvent, void, unknown> {
+    if (!process.env.GEMINI_API_KEY?.trim()) {
+      yield createActivityEvent('error', 'GEMINI_API_KEY es requerida para usar el chat.');
+      return;
+    }
+
+    const lastMessage = messages.at(-1);
+
+    this.logger.log({
+      event: 'chat.request_received',
+      message: 'Chat request received',
+      messageCount: messages.length,
+      lastMessageLength: lastMessage?.content.length ?? 0,
+      totalContentLength: totalContentLength(messages),
+    });
+
+    yield createActivityEvent('status', ACTIVITY_ANALYZING_LABEL);
+
+    try {
+      yield* this.streamAnswerWithInvalidToolRetry(messages);
+    } catch (error) {
+      if (error instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(error)) {
+        this.logger.warn({
+          event: 'chat.provider_quota_exceeded',
+          message: 'AI provider quota exceeded',
+          provider: 'gemini',
+          retryable: true,
+          error: serializeAgentError(error, 0, { includeStack: false, maxCauseDepth: 1 }),
+        });
+      } else if (error instanceof GastiEmptyAnswerExhaustedError || isEmptyAgentAnswerError(error)) {
+        this.logger.warn({
+          event: 'chat.empty_answer_public_error',
+          message: 'AI provider returned an empty answer',
+          provider: 'gemini',
+          retryable: true,
+          error: serializeAgentError(error, 0, { includeStack: false, maxCauseDepth: 1 }),
+        });
+      } else {
+        this.logAgentGenerationFailure(error);
+      }
+
+      yield createActivityEvent('error', getPublicStreamErrorLabel(error));
+    }
+  }
+
+  private async generateAnswerWithModelFallback(
+    messages: ChatMessage[],
+    attempt: number,
+    activity?: ActivityEventCollector,
+  ): Promise<string> {
     const modelIds = getGastiModelFallbackChain();
     const quotaErrors: unknown[] = [];
     const emptyAnswerErrors: EmptyAgentAnswerError[] = [];
 
     for (const [modelIndex, modelId] of modelIds.entries()) {
       try {
-        return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length);
+        return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length, activity);
       } catch (error) {
         if (isProviderQuotaError(error)) {
           quotaErrors.push(error);
@@ -470,6 +730,7 @@ export class ChatService {
               modelCount: modelIds.length,
               error: serializeAgentError(error, 0, { includeStack: false, maxCauseDepth: 1 }),
             });
+            activity?.addWarning(ACTIVITY_MODEL_FALLBACK_LABEL);
 
             continue;
           }
@@ -501,6 +762,7 @@ export class ChatService {
               reason: 'empty_answer',
               generation: error.metadata,
             });
+            activity?.addWarning(ACTIVITY_EMPTY_ANSWER_RETRY_LABEL);
 
             continue;
           }
@@ -514,9 +776,10 @@ export class ChatService {
             modelCount: modelIds.length,
             generation: error.metadata,
           });
+          activity?.addWarning(ACTIVITY_EMPTY_ANSWER_RETRY_LABEL);
 
           try {
-            return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length);
+            return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length, activity);
           } catch (retryError) {
             if (isEmptyAgentAnswerError(retryError)) {
               emptyAnswerErrors.push(retryError);
@@ -540,6 +803,7 @@ export class ChatService {
     modelId: string,
     modelIndex: number,
     modelCount: number,
+    activity?: ActivityEventCollector,
   ): Promise<string> {
     const lastMessage = messages.at(-1);
 
@@ -571,6 +835,8 @@ export class ChatService {
       throw new EmptyAgentAnswerError(generation);
     }
 
+    activity?.addGenerateResult(result);
+
     this.logger.log({
       event: 'chat.model_attempt_succeeded',
       message: 'Gemini model attempt succeeded',
@@ -582,6 +848,238 @@ export class ChatService {
     });
 
     return result.text;
+  }
+
+  private async *streamAnswerWithInvalidToolRetry(
+    messages: ChatMessage[],
+  ): AsyncGenerator<ChatActivityEvent, string, unknown> {
+    try {
+      return yield* this.streamAnswerWithModelFallback(messages, 1);
+    } catch (error) {
+      if (!isInvalidToolArgumentsError(error)) {
+        throw error;
+      }
+
+      this.logger.warn({
+        event: 'chat.agent_generation_retrying',
+        message: 'Invalid tool arguments detected, retrying once',
+        attempt: 1,
+        nextAttempt: 2,
+        error: serializeAgentError(error),
+      });
+
+      yield createActivityEvent('warning', ACTIVITY_INVALID_TOOL_RETRY_LABEL);
+
+      try {
+        return yield* this.streamAnswerWithModelFallback(createInvalidToolArgumentsRetryMessages(messages), 2);
+      } catch (retryError) {
+        if (retryError instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(retryError)) {
+          throw retryError;
+        }
+
+        if (retryError instanceof GastiEmptyAnswerExhaustedError || isEmptyAgentAnswerError(retryError)) {
+          throw retryError;
+        }
+
+        this.logAgentGenerationFailure(retryError);
+        throw new InternalServerErrorException('Failed to generate a chat answer.');
+      }
+    }
+  }
+
+  private async *streamAnswerWithModelFallback(
+    messages: ChatMessage[],
+    attempt: number,
+  ): AsyncGenerator<ChatActivityEvent, string, unknown> {
+    const modelIds = getGastiModelFallbackChain();
+    const quotaErrors: unknown[] = [];
+    const emptyAnswerErrors: EmptyAgentAnswerError[] = [];
+
+    for (const [modelIndex, modelId] of modelIds.entries()) {
+      try {
+        return yield* this.streamAnswer(messages, attempt, modelId, modelIndex, modelIds.length);
+      } catch (error) {
+        if (isProviderQuotaError(error)) {
+          quotaErrors.push(error);
+          const nextModelId = modelIds[modelIndex + 1];
+
+          if (nextModelId) {
+            this.logger.warn({
+              event: 'chat.model_fallback_retrying',
+              message: 'Gemini model quota exhausted, retrying with fallback model',
+              attempt,
+              modelId,
+              nextModelId,
+              modelIndex: modelIndex + 1,
+              modelCount: modelIds.length,
+              error: serializeAgentError(error, 0, { includeStack: false, maxCauseDepth: 1 }),
+            });
+
+            yield createActivityEvent('warning', ACTIVITY_MODEL_FALLBACK_LABEL);
+            continue;
+          }
+
+          const exhaustedError = new GastiModelFallbackExhaustedError(modelIds, quotaErrors, error);
+          this.logger.error({
+            event: 'chat.model_fallback_exhausted',
+            message: 'All Gemini fallback models failed with quota or rate-limit errors',
+            modelIds,
+            error: serializeAgentError(exhaustedError, 0, { includeStack: false, maxCauseDepth: 1 }),
+          });
+
+          throw exhaustedError;
+        }
+
+        if (isEmptyAgentAnswerError(error)) {
+          emptyAnswerErrors.push(error);
+          const nextModelId = modelIds[modelIndex + 1];
+
+          if (nextModelId) {
+            this.logger.warn({
+              event: 'chat.model_fallback_retrying',
+              message: 'Gemini model returned an empty answer, retrying with fallback model',
+              attempt,
+              modelId,
+              nextModelId,
+              modelIndex: modelIndex + 1,
+              modelCount: modelIds.length,
+              reason: 'empty_answer',
+              generation: error.metadata,
+            });
+
+            yield createActivityEvent('warning', ACTIVITY_EMPTY_ANSWER_RETRY_LABEL);
+            continue;
+          }
+
+          this.logger.warn({
+            event: 'chat.empty_answer_final_model_retrying',
+            message: 'Final Gemini model returned an empty answer, retrying the same model once',
+            attempt,
+            modelId,
+            modelIndex: modelIndex + 1,
+            modelCount: modelIds.length,
+            generation: error.metadata,
+          });
+
+          yield createActivityEvent('warning', ACTIVITY_EMPTY_ANSWER_RETRY_LABEL);
+
+          try {
+            return yield* this.streamAnswer(messages, attempt, modelId, modelIndex, modelIds.length);
+          } catch (retryError) {
+            if (isEmptyAgentAnswerError(retryError)) {
+              emptyAnswerErrors.push(retryError);
+              this.throwEmptyAnswerExhausted(modelIds, emptyAnswerErrors, retryError);
+            }
+
+            throw retryError;
+          }
+        }
+
+        throw error;
+      }
+    }
+
+    throw new GastiModelFallbackExhaustedError(modelIds, quotaErrors, quotaErrors.at(-1));
+  }
+
+  private async *streamAnswer(
+    messages: ChatMessage[],
+    attempt: number,
+    modelId: string,
+    modelIndex: number,
+    modelCount: number,
+  ): AsyncGenerator<ChatActivityEvent, string, unknown> {
+    const lastMessage = messages.at(-1);
+    const activity = new ActivityEventCollector();
+    let answer = '';
+
+    this.logger.log({
+      event: 'chat.model_attempt_started',
+      message: 'Gemini model attempt started',
+      attempt,
+      modelId,
+      modelIndex: modelIndex + 1,
+      modelCount,
+      messageCount: messages.length,
+      lastMessageLength: lastMessage?.content.length ?? 0,
+      totalContentLength: totalContentLength(messages),
+    });
+
+    const result = await this.agent.stream(messages, { maxSteps: 5, modelId });
+
+    for await (const chunk of result.fullStream) {
+      const chunkType = readChunkType(chunk);
+
+      if (chunkType === 'tool-call-streaming-start' || chunkType === 'tool-call') {
+        const event = activity.addToolCall(readToolName(chunk), readToolCallId(chunk));
+
+        if (event) {
+          yield event;
+        }
+
+        continue;
+      }
+
+      if (chunkType === 'tool-result') {
+        const event = activity.addToolResult(readToolName(chunk), readToolCallId(chunk));
+
+        if (event) {
+          yield event;
+        }
+
+        continue;
+      }
+
+      if (chunkType === 'text-delta') {
+        const textDelta = readTextDelta(chunk);
+
+        if (!textDelta) {
+          continue;
+        }
+
+        const event = activity.addGeneratingFinalAnswerOnce();
+
+        if (event) {
+          yield event;
+        }
+
+        answer += textDelta;
+        continue;
+      }
+
+      if (chunkType === 'error') {
+        throw readStreamError(chunk);
+      }
+    }
+
+    const generation = buildAgentGenerationMetadata({ text: answer }, messages, modelId);
+
+    if (!answer.trim()) {
+      this.logger.warn({
+        event: 'chat.model_attempt_empty',
+        message: 'Gemini model attempt returned an empty answer',
+        attempt,
+        modelIndex: modelIndex + 1,
+        modelCount,
+        ...generation,
+      });
+
+      throw new EmptyAgentAnswerError(generation);
+    }
+
+    this.logger.log({
+      event: 'chat.model_attempt_succeeded',
+      message: 'Gemini model attempt succeeded',
+      attempt,
+      modelIndex: modelIndex + 1,
+      modelCount,
+      responseLength: answer.length,
+      ...generation,
+    });
+
+    yield activity.addFinalAnswer(answer);
+
+    return answer;
   }
 
   private throwEmptyAnswerExhausted(

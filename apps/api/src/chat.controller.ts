@@ -1,10 +1,19 @@
-import { BadRequestException, Body, Controller, Inject, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Inject, Post, Res } from '@nestjs/common';
 
 import { ChatService } from './chat.service.js';
-import type { ChatMessage, ChatRequestBody, ChatResponseBody, ChatRole } from './chat.types.js';
+import type { ChatActivityEvent, ChatMessage, ChatRequestBody, ChatResponseBody, ChatRole } from './chat.types.js';
 
 type ChatResponder = {
   answer: (messages: ChatMessage[]) => Promise<string>;
+  answerWithSteps: (messages: ChatMessage[]) => Promise<ChatResponseBody>;
+  streamAnswerEvents: (messages: ChatMessage[]) => AsyncIterable<ChatActivityEvent>;
+};
+
+type SseResponse = {
+  setHeader: (name: string, value: string) => void;
+  write: (chunk: string) => void;
+  end: () => void;
+  flushHeaders?: () => void;
 };
 
 const SUPPORTED_CHAT_ROLES = new Set<ChatRole>(['user', 'assistant']);
@@ -76,12 +85,41 @@ function normalizeChatRequest(body: ChatRequestBody): ChatMessage[] {
   return normalizeLegacyMessage(record.message);
 }
 
+function writeSseEvent(response: SseResponse, event: ChatActivityEvent): void {
+  response.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
 @Controller()
 export class ChatController {
   constructor(@Inject(ChatService) private readonly chatService: ChatResponder) {}
 
   @Post('chat')
   async chat(@Body() body: ChatRequestBody): Promise<ChatResponseBody> {
-    return { answer: await this.chatService.answer(normalizeChatRequest(body)) };
+    return await this.chatService.answerWithSteps(normalizeChatRequest(body));
+  }
+
+  @Post('chat/stream')
+  async chatStream(@Body() body: ChatRequestBody, @Res() response: SseResponse): Promise<void> {
+    const messages = normalizeChatRequest(body);
+
+    response.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-cache, no-transform');
+    response.setHeader('Connection', 'keep-alive');
+    response.setHeader('X-Accel-Buffering', 'no');
+    response.flushHeaders?.();
+
+    try {
+      for await (const event of this.chatService.streamAnswerEvents(messages)) {
+        writeSseEvent(response, event);
+      }
+    } catch {
+      writeSseEvent(response, {
+        type: 'error',
+        label: 'No pude generar una respuesta. Intentá de nuevo.',
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      response.end();
+    }
   }
 }

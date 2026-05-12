@@ -21,6 +21,10 @@ type GenerateGastiFinanceAgentOptions = {
   modelId?: string;
 };
 
+type StreamGastiFinanceAgentResult = {
+  fullStream: AsyncIterable<unknown>;
+};
+
 export type GastiFinanceAgentMessage = {
   role: 'user' | 'assistant';
   content: string;
@@ -116,4 +120,18 @@ export async function generateGastiFinanceAgent(
   }
 
   return await gastiFinanceAgent.generate(messages, { maxSteps, runtimeContext });
+}
+
+export async function streamGastiFinanceAgent(
+  messages: string | GastiFinanceAgentMessage[],
+  { maxSteps, modelId }: GenerateGastiFinanceAgentOptions = {},
+): Promise<StreamGastiFinanceAgentResult> {
+  const runtimeContext = new RuntimeContext();
+  const trimmedModelId = modelId?.trim();
+
+  if (trimmedModelId) {
+    runtimeContext.set(GASTI_MODEL_RUNTIME_CONTEXT_KEY, trimmedModelId);
+  }
+
+  return await gastiFinanceAgent.stream(messages, { maxSteps, runtimeContext, toolCallStreaming: true });
 }
