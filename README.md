@@ -100,6 +100,7 @@ bun run build
 
 ## Tools del agente
 
+- `getFinanceContext`: expone el rango disponible, meses con datos y fecha de referencia sin devolver transacciones crudas.
 - `spendingSummaryTool`: calcula totales y desgloses de gasto.
 - `comparePeriodsTool`: compara gastos entre dos períodos.
 - `detectRecurringExpensesTool`: detecta gastos recurrentes y suscripciones.
@@ -107,5 +108,4 @@ bun run build
 - `findTransactionsTool`: busca transacciones concretas para mostrar evidencia.
 
 ## Para después
-
 

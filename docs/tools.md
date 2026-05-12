@@ -59,6 +59,43 @@ const transactionSchema = z.object({
 });
 ```
 
+## `getFinanceContext`
+
+Purpose: expose deterministic metadata about the local ARS transaction dataset.
+
+Why it exists: the agent needs a reliable reference for available dates, relative-date resolution, and month names without passing every transaction row into the prompt.
+
+Input:
+
+```ts
+z.object({}).strict()
+```
+
+Output:
+
+```ts
+z.object({
+  today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  currency: z.literal("ARS"),
+  availableDateRange: dateRangeSchema,
+  availableMonths: z.array(z.object({
+    year: z.number(),
+    month: z.number(),
+    label: z.string(),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    transactionCount: z.number(),
+  })),
+})
+```
+
+Notes:
+
+- `today` uses the configured demo reference date.
+- `availableDateRange` is derived from the minimum and maximum transaction dates.
+- `availableMonths` includes only months that have transactions.
+- The tool must not return raw transaction rows.
+
 ## `spendingSummaryTool`
 
 Purpose: answer aggregate questions like "cuanto gaste", "en que se me fue la plata", and "top categorias".
