@@ -78,6 +78,22 @@ The UI listens on `http://localhost:3000` by default and posts to its local Next
 export GASTI_CHAT_API_URL="http://localhost:3001/chat"
 ```
 
+Phase 6 backend verification:
+
+```bash
+curl -s http://localhost:3001/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"¿Cuánto gasté en mayo de 2026?"}'
+```
+
+Phase 6 UI proxy verification:
+
+```bash
+curl -s http://localhost:3000/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"¿Cuánto gasté en mayo de 2026?"}]}'
+```
+
 Health check:
 
 ```bash

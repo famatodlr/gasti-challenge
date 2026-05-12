@@ -52,6 +52,7 @@ export default function Page() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const isSendingRef = useRef(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -60,9 +61,11 @@ export default function Page() {
   async function sendMessage(content: string) {
     const trimmedContent = content.trim();
 
-    if (!trimmedContent || isLoading) {
+    if (!trimmedContent || isSendingRef.current) {
       return;
     }
+
+    isSendingRef.current = true;
 
     const userMessage = createMessage('user', trimmedContent);
     const nextMessages = [...messages, userMessage];
@@ -77,10 +80,7 @@ export default function Page() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: nextMessages.map(({ role, content: messageContent }) => ({
-            role,
-            content: messageContent,
-          })),
+          messages: [{ role: 'user', content: trimmedContent }],
         }),
       });
 
@@ -98,6 +98,7 @@ export default function Page() {
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : getErrorMessage(null));
     } finally {
+      isSendingRef.current = false;
       setIsLoading(false);
     }
   }

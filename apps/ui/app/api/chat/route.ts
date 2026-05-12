@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 
 const DEFAULT_CHAT_API_URL = 'http://localhost:3001/chat';
+const GENERIC_CHAT_ERROR = 'No pude conectar con Gasti. Revisá que el backend esté corriendo e intentá de nuevo.';
+const INVALID_INPUT_ERROR = 'Mandame una pregunta para consultar tus gastos.';
+const INVALID_RESPONSE_ERROR = 'Gasti respondió con un formato inesperado. Intentá de nuevo.';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -37,13 +40,13 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return jsonError('Invalid JSON body.', 400);
+    return jsonError(INVALID_INPUT_ERROR, 400);
   }
 
   const latestUserMessage = extractLatestUserMessage(body);
 
   if (!latestUserMessage) {
-    return jsonError('messages must include at least one non-empty user message.', 400);
+    return jsonError(INVALID_INPUT_ERROR, 400);
   }
 
   const backendUrl = process.env.GASTI_CHAT_API_URL ?? DEFAULT_CHAT_API_URL;
@@ -58,20 +61,15 @@ export async function POST(request: Request) {
     const backendBody = await backendResponse.json().catch(() => null);
 
     if (!backendResponse.ok) {
-      const message =
-        isRecord(backendBody) && typeof backendBody.message === 'string'
-          ? backendBody.message
-          : 'No pude conectar con el asistente financiero.';
-
-      return jsonError(message, backendResponse.status);
+      return jsonError(GENERIC_CHAT_ERROR, backendResponse.status);
     }
 
     if (!isRecord(backendBody) || typeof backendBody.answer !== 'string') {
-      return jsonError('La respuesta del asistente no tuvo el formato esperado.', 502);
+      return jsonError(INVALID_RESPONSE_ERROR, 502);
     }
 
     return NextResponse.json({ answer: backendBody.answer });
   } catch {
-    return jsonError('No pude conectar con el asistente financiero.', 502);
+    return jsonError(GENERIC_CHAT_ERROR, 502);
   }
 }
