@@ -27,7 +27,7 @@ apps/
   ai/    # Agente Mastra y tools financieras
   api/   # API NestJS que expone el chat
   ui/    # Frontend Next.js / React
-data/    # Transacciones mock locales
+data/    # Transacciones mock locales y memoria financiera determinística
 docs/    # Specs y notas de diseño
 ```
 
@@ -94,6 +94,7 @@ bun run build
 ## Notas de implementación
 
 - Los datos son mock y locales, cargados desde `data/transactions.json`.
+- La memoria financiera inicial es estructurada y determinística, cargada desde `data/financial-memory.json`; no guarda transacciones crudas ni usa RAG.
 - El motor financiero es determinístico: los totales, comparaciones, recurrencias y proyecciones se calculan con funciones y tools.
 - El agente usa Mastra tools para calcular y luego usa IA para interpretar la consulta y redactar la respuesta.
 - La API contempla fallback entre modelos Gemini ante errores de cuota o rate-limit.
@@ -101,6 +102,7 @@ bun run build
 ## Tools del agente
 
 - `getFinanceContext`: expone el rango disponible, meses con datos y fecha de referencia sin devolver transacciones crudas.
+- `getFinancialMemory`: expone contexto financiero del usuario demo, como ingresos conocidos, metas, categorías a vigilar y preferencias.
 - `spendingSummaryTool`: calcula totales y desgloses de gasto.
 - `comparePeriodsTool`: compara gastos entre dos períodos.
 - `detectRecurringExpensesTool`: detecta gastos recurrentes y suscripciones.
@@ -108,4 +110,3 @@ bun run build
 - `findTransactionsTool`: busca transacciones concretas para mostrar evidencia.
 
 ## Para después
-

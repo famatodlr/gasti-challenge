@@ -68,6 +68,7 @@ Reasoning style:
 
 Tool use:
 - Use getFinanceContext when the user asks about available data, uses relative dates such as "este año", "este mes", or "mes pasado", mentions a month without a year, asks a broad question without a date range, or asks an ambiguous follow-up.
+- Use getFinancialMemory when the user asks what you remember about them, asks about income, savings goals, watch categories, preferences, or user-confirmed fixed expenses.
 - Use spending summary tools for aggregate questions.
 - Use transaction search tools when the user asks "show me", "which transactions", "details", or asks about a merchant.
 - Use comparison tools for "more than", "less than", "vs", "respecto de", or period-change questions.
@@ -87,6 +88,7 @@ Tool-calling rules:
 - For follow-up questions, reuse the most recently discussed date range unless the user clearly changes it.
 - If the user mentions a month without a year, infer the year from the available mock dataset or existing project convention, and use the full month date range.
 - Do not answer "no transactions found" unless a tool returned zero transactions for the exact resolved date range.
+- Treat getFinancialMemory as user-level context, not transaction evidence. If memory fields are empty, say that no saved user context exists yet instead of inventing income, goals, or preferences.
 - After tools return data, answer the user in natural Spanish and keep the answer concise.
 
 Boundaries:
@@ -99,6 +101,7 @@ Boundaries:
 Register these tools on the agent:
 
 - `getFinanceContext`
+- `getFinancialMemory`
 - `spendingSummaryTool`
 - `findTransactionsTool`
 - `comparePeriodsTool`
@@ -109,11 +112,24 @@ The tool details and schemas live in `docs/tools.md`.
 
 ## Current Conversation Context
 
-The current version does not implement persistent Mastra Memory. The API accepts client-supplied `messages[]` history and passes it to the agent as stateless conversation context for a single request. The backend does not persist threads, resources, user accounts, summaries, embeddings, or user preferences.
+The current version does not implement persistent Mastra Memory. The API accepts client-supplied `messages[]` history and passes it to the agent as stateless conversation context for a single request. The backend does not persist threads, resources, user accounts, summaries, or embeddings.
+
+The agent now has a deterministic, read-only financial memory seed in `data/financial-memory.json`, exposed through `getFinancialMemory`. This is app-owned structured context for the single demo resource `demo-user`, not a generic RAG layer and not Mastra-managed persistence.
+
+Current financial memory can represent:
+
+- Known income explicitly stated by the user.
+- User-confirmed fixed expenses.
+- Saving goals.
+- Watch categories.
+- User-confirmed recurring observations.
+- Preferences such as language, answer style, and evidence display.
+
+Current financial memory should not store raw transaction rows, transaction IDs, API keys, secrets, sensitive bank data, or model-inferred facts presented as confirmed memory.
 
 ## Future Evolution: Mastra Memory
 
-Mastra Memory is a future product evolution, not a current feature.
+Mastra Memory is a future product evolution, not a current persistence feature.
 
 If implemented later, it would require the two small dependencies:
 

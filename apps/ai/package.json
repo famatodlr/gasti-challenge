@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "mastra dev",
-    "build": "bun run build:package && mastra build",
+    "build": "bun run build:package && MASTRA_TELEMETRY_DISABLED=1 bun node_modules/mastra/dist/index.js build",
     "build:package": "tsc -p tsconfig.build.json",
     "test:agents": "bun test src/mastra/agents/*.test.ts",
     "test:domain": "bun test src/mastra/domain/*.test.ts",

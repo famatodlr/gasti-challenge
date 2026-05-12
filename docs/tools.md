@@ -12,7 +12,7 @@ Shared conventions:
 - Amounts are positive integer pesos for expenses.
 - Tool outputs include enough transaction IDs for the agent to cite evidence.
 - Tools perform deterministic data work; the agent turns results into conversation.
-- No tool calls live APIs in the challenge version. All raw data comes from `data/transactions.json`.
+- No tool calls live APIs in the challenge version. Raw transaction data comes from `data/transactions.json`; structured user memory comes from `data/financial-memory.json`.
 - The raw file keeps original broad categories. Tools expose normalized finance categories and keep the original value as `rawCategory` on transaction rows.
 - Public tool inputs use flat date fields for LLM reliability. Date-bounded tools use top-level `from` and `to`; comparison tools use `currentFrom`, `currentTo`, `baselineFrom`, and `baselineTo`.
 
@@ -95,6 +95,73 @@ Notes:
 - `availableDateRange` is derived from the minimum and maximum transaction dates.
 - `availableMonths` includes only months that have transactions.
 - The tool must not return raw transaction rows.
+
+## `getFinancialMemory`
+
+Purpose: expose deterministic user-level financial context for the single demo resource.
+
+Why it exists: transaction tools answer what happened in the mock ledger; financial memory answers what the user has explicitly told Gasti about income, goals, preferences, categories to watch, and confirmed recurring context. This is not generic RAG and does not use embeddings.
+
+Input:
+
+```ts
+z.object({}).strict()
+```
+
+Output:
+
+```ts
+z.object({
+  schemaVersion: z.literal(1),
+  resourceId: z.literal("demo-user"),
+  currency: z.literal("ARS"),
+  knownIncome: z.array(z.object({
+    label: z.string(),
+    amount: z.number(),
+    currency: z.literal("ARS"),
+    cadence: z.enum(["monthly", "weekly", "biweekly", "one_time", "unknown"]),
+    source: z.enum(["user_stated", "user_confirmed"]),
+    notes: z.string().optional(),
+  })),
+  fixedExpenses: z.array(z.object({
+    merchant: z.string(),
+    category: categorySchema,
+    amount: z.number(),
+    currency: z.literal("ARS"),
+    cadence: z.enum(["monthly", "weekly", "annual", "unknown"]),
+    source: z.enum(["user_stated", "user_confirmed"]),
+    notes: z.string().optional(),
+  })),
+  savingGoals: z.array(z.object({
+    name: z.string(),
+    targetAmount: z.number(),
+    currency: z.literal("ARS"),
+    targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    monthlyContributionTarget: z.number().optional(),
+    source: z.enum(["user_stated", "user_confirmed"]),
+    notes: z.string().optional(),
+  })),
+  watchCategories: z.array(categorySchema),
+  recurringObservations: z.array(z.object({
+    merchant: z.string(),
+    category: categorySchema,
+    observation: z.string(),
+    preference: z.enum(["watch", "reduce", "keep"]),
+    source: z.enum(["user_stated", "user_confirmed"]),
+  })),
+  preferences: z.object({
+    preferredLanguage: z.enum(["es-AR", "en"]),
+    answerStyle: z.enum(["concise", "detailed"]),
+    includeEvidence: z.boolean(),
+  }),
+})
+```
+
+Notes:
+
+- The current seed is intentionally sparse and uses empty arrays for facts the user has not supplied.
+- The tool must not return raw transaction rows or transaction IDs.
+- An update-memory tool should only be added after explicit confirmation rules exist.
 
 ## `spendingSummaryTool`
 

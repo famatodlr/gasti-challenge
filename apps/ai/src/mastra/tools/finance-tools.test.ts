@@ -7,6 +7,7 @@ import {
   findTransactionsTool,
   forecastMonthEndSpendTool,
   getFinanceContextTool,
+  getFinancialMemoryTool,
   spendingSummaryTool,
 } from './index.ts';
 
@@ -114,6 +115,27 @@ test('getFinanceContextTool exposes dataset metadata without raw transactions', 
     ],
   );
   assert.equal(JSON.stringify(parsedFinanceContext).includes('txn_'), false);
+});
+
+test('getFinancialMemoryTool exposes structured user context without raw transactions', async () => {
+  const financialMemory = await executeTool(getFinancialMemoryTool, {});
+  const parsedFinancialMemory = getFinancialMemoryTool.outputSchema.parse(financialMemory);
+
+  assert.equal(parsedFinancialMemory.schemaVersion, 1);
+  assert.equal(parsedFinancialMemory.resourceId, 'demo-user');
+  assert.equal(parsedFinancialMemory.currency, 'ARS');
+  assert.deepEqual(parsedFinancialMemory.knownIncome, []);
+  assert.deepEqual(parsedFinancialMemory.fixedExpenses, []);
+  assert.deepEqual(parsedFinancialMemory.savingGoals, []);
+  assert.deepEqual(parsedFinancialMemory.watchCategories, []);
+  assert.deepEqual(parsedFinancialMemory.recurringObservations, []);
+  assert.deepEqual(parsedFinancialMemory.preferences, {
+    preferredLanguage: 'es-AR',
+    answerStyle: 'concise',
+    includeEvidence: true,
+  });
+  assert.equal(JSON.stringify(parsedFinancialMemory).includes('txn_'), false);
+  assert.equal(JSON.stringify(parsedFinancialMemory).includes('transactions'), false);
 });
 
 test('April questions can resolve to the dataset year from finance context', async () => {
