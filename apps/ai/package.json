@@ -14,7 +14,7 @@
     "build": "bun run build:package && mastra build",
     "build:package": "tsc -p tsconfig.build.json",
     "test:agents": "bun test src/mastra/agents/*.test.ts",
-    "test:domain": "bun test src/mastra/domain/analytics.test.ts",
+    "test:domain": "bun test src/mastra/domain/*.test.ts",
     "test:tools": "bun test src/mastra/tools/finance-tools.test.ts",
     "verify:domain": "node src/mastra/domain/verify-analytics.ts"
   },

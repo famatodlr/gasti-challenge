@@ -6,6 +6,7 @@ import {
   detectRecurringExpensesTool,
   findTransactionsTool,
   forecastMonthEndSpendTool,
+  getFinanceContextTool,
   spendingSummaryTool,
 } from './index.ts';
 
@@ -87,6 +88,52 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedMonthEndForecast.observedSpend, 499698);
   assert.equal(parsedMonthEndForecast.projectedMonthEndSpend, 1109773);
   assert.equal(parsedMonthEndForecast.confidence, 'medium');
+});
+
+test('getFinanceContextTool exposes dataset metadata without raw transactions', async () => {
+  const financeContext = await executeTool(getFinanceContextTool, {});
+  const parsedFinanceContext = getFinanceContextTool.outputSchema.parse(financeContext);
+
+  assert.equal(parsedFinanceContext.today, '2026-05-12');
+  assert.equal(parsedFinanceContext.currency, 'ARS');
+  assert.deepEqual(parsedFinanceContext.availableDateRange, {
+    from: '2026-03-15',
+    to: '2026-05-08',
+  });
+  assert.deepEqual(
+    parsedFinanceContext.availableMonths.map(({ year, month, label, transactionCount }) => ({
+      year,
+      month,
+      label,
+      transactionCount,
+    })),
+    [
+      { year: 2026, month: 3, label: 'marzo de 2026', transactionCount: 3 },
+      { year: 2026, month: 4, label: 'abril de 2026', transactionCount: 32 },
+      { year: 2026, month: 5, label: 'mayo de 2026', transactionCount: 15 },
+    ],
+  );
+  assert.equal(JSON.stringify(parsedFinanceContext).includes('txn_'), false);
+});
+
+test('April questions can resolve to the dataset year from finance context', async () => {
+  const financeContext = getFinanceContextTool.outputSchema.parse(await executeTool(getFinanceContextTool, {}));
+  const april = financeContext.availableMonths.find((month) => month.label === 'abril de 2026');
+
+  assert.ok(april);
+
+  const aprilSummary = spendingSummaryTool.outputSchema.parse(
+    await executeTool(spendingSummaryTool, {
+      from: april.from,
+      to: april.to,
+      groupBy: 'category',
+    }),
+  );
+
+  assert.equal(aprilSummary.period.from, '2026-04-01');
+  assert.equal(aprilSummary.period.to, '2026-04-30');
+  assert.equal(aprilSummary.transactionCount, 32);
+  assert.notEqual(aprilSummary.total, 0);
 });
 
 test('single-range finance tools require strict top-level date inputs', () => {
