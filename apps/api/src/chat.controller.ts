@@ -1,10 +1,15 @@
 import { BadRequestException, Body, Controller, Inject, Post } from '@nestjs/common';
 
 import { ChatService } from './chat.service.js';
-import type { ChatMessage, ChatRequestBody, ChatResponseBody, ChatRole } from './chat.types.js';
+import type { ChatMessage, ChatRequestBody, ChatRequestContext, ChatResponseBody, ChatRole } from './chat.types.js';
 
 type ChatResponder = {
-  answer: (messages: ChatMessage[]) => Promise<string>;
+  answer: (messages: ChatMessage[], context?: ChatRequestContext) => Promise<string>;
+};
+
+type NormalizedChatRequest = {
+  messages: ChatMessage[];
+  context: ChatRequestContext;
 };
 
 const SUPPORTED_CHAT_ROLES = new Set<ChatRole>(['user', 'assistant']);
@@ -60,7 +65,32 @@ function normalizeMessages(value: unknown): ChatMessage[] {
   return messages;
 }
 
-function normalizeChatRequest(body: ChatRequestBody): ChatMessage[] {
+function normalizeOptionalContextString(
+  record: Record<string, unknown>,
+  key: 'resourceId' | 'threadId',
+): string | undefined {
+  if (!hasOwnProperty(record, key)) {
+    return undefined;
+  }
+
+  const value = record[key];
+  const content = typeof value === 'string' ? value.trim() : '';
+
+  if (!content) {
+    throw new BadRequestException(`${key} must be a non-empty string when provided.`);
+  }
+
+  return content;
+}
+
+function normalizeChatContext(record: Record<string, unknown>): ChatRequestContext {
+  return {
+    resourceId: normalizeOptionalContextString(record, 'resourceId'),
+    threadId: normalizeOptionalContextString(record, 'threadId'),
+  };
+}
+
+function normalizeChatRequest(body: ChatRequestBody): NormalizedChatRequest {
   const record = isRecord(body) ? body : {};
   const hasMessage = hasOwnProperty(record, 'message');
   const hasMessages = hasOwnProperty(record, 'messages');
@@ -69,11 +99,13 @@ function normalizeChatRequest(body: ChatRequestBody): ChatMessage[] {
     throw new BadRequestException('Use either message or messages, not both.');
   }
 
+  const context = normalizeChatContext(record);
+
   if (hasMessages) {
-    return normalizeMessages(record.messages);
+    return { messages: normalizeMessages(record.messages), context };
   }
 
-  return normalizeLegacyMessage(record.message);
+  return { messages: normalizeLegacyMessage(record.message), context };
 }
 
 @Controller()
@@ -82,6 +114,8 @@ export class ChatController {
 
   @Post('chat')
   async chat(@Body() body: ChatRequestBody): Promise<ChatResponseBody> {
-    return { answer: await this.chatService.answer(normalizeChatRequest(body)) };
+    const request = normalizeChatRequest(body);
+
+    return { answer: await this.chatService.answer(request.messages, request.context) };
   }
 }

@@ -8,8 +8,15 @@ export type ChatMessage = {
 export type ChatRequestBody = {
   message?: unknown;
   messages?: unknown;
+  resourceId?: unknown;
+  threadId?: unknown;
 };
 
 export type ChatResponseBody = {
   answer: string;
+};
+
+export type ChatRequestContext = {
+  resourceId?: string;
+  threadId?: string;
 };

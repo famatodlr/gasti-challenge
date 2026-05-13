@@ -46,9 +46,25 @@ test('loads the deterministic financial memory fixture', () => {
 
   assert.equal(memory.resourceId, 'demo-user');
   assert.equal(memory.currency, 'ARS');
-  assert.deepEqual(memory.knownIncome, []);
+  assert.deepEqual(memory.knownIncome, [
+    {
+      label: 'Ingreso mensual',
+      amount: 1500000,
+      currency: 'ARS',
+      cadence: 'monthly',
+      source: 'user_stated',
+    },
+  ]);
   assert.deepEqual(memory.fixedExpenses, []);
-  assert.deepEqual(memory.savingGoals, []);
+  assert.deepEqual(memory.savingGoals, [
+    {
+      name: 'Viaje a Japón',
+      currency: 'ARS',
+      targetDate: '2025-01-01',
+      source: 'user_stated',
+    },
+  ]);
+  assert.deepEqual(memory.watchCategories, ['delivery']);
 });
 
 test('financial memory accepts delivery as a watch category', () => {

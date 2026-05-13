@@ -11,10 +11,12 @@ type TestChatMessage = {
 
 function createControllerWithCapture() {
   let capturedMessages: TestChatMessage[] | undefined;
+  let capturedContext: { resourceId?: string; threadId?: string } | undefined;
 
   const controller = new ChatController({
-    answer: async (messages: TestChatMessage[]) => {
+    answer: async (messages: TestChatMessage[], context?: { resourceId?: string; threadId?: string }) => {
       capturedMessages = messages;
+      capturedContext = context;
       return 'Respuesta de prueba.';
     },
   });
@@ -22,6 +24,7 @@ function createControllerWithCapture() {
   return {
     controller,
     getCapturedMessages: () => capturedMessages,
+    getCapturedContext: () => capturedContext,
   };
 }
 
@@ -66,6 +69,48 @@ test('ChatController keeps legacy message compatibility', async () => {
     answer: 'Respuesta de prueba.',
   });
   assert.deepEqual(getCapturedMessages(), [{ role: 'user', content: 'Cuanto gaste en supermercado en mayo?' }]);
+});
+
+test('ChatController accepts resourceId and threadId with legacy message bodies', async () => {
+  const { controller, getCapturedContext, getCapturedMessages } = createControllerWithCapture();
+
+  assert.deepEqual(
+    await controller.chat({
+      message: 'Qué veníamos hablando?',
+      resourceId: ' demo-user ',
+      threadId: ' thread-mayo ',
+    }),
+    { answer: 'Respuesta de prueba.' },
+  );
+  assert.deepEqual(getCapturedMessages(), [{ role: 'user', content: 'Qué veníamos hablando?' }]);
+  assert.deepEqual(getCapturedContext(), { resourceId: 'demo-user', threadId: 'thread-mayo' });
+});
+
+test('ChatController accepts resourceId and threadId with messages arrays', async () => {
+  const { controller, getCapturedContext } = createControllerWithCapture();
+
+  assert.deepEqual(
+    await controller.chat({
+      messages: [{ role: 'user', content: 'Cuanto gaste?' }],
+      resourceId: 'demo-user',
+      threadId: 'thread-local',
+    }),
+    { answer: 'Respuesta de prueba.' },
+  );
+  assert.deepEqual(getCapturedContext(), { resourceId: 'demo-user', threadId: 'thread-local' });
+});
+
+test('ChatController rejects blank resourceId and threadId values', async () => {
+  const { controller } = createControllerWithCapture();
+
+  await assert.rejects(
+    () => controller.chat({ message: 'Cuanto gaste?', resourceId: '   ' }),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => controller.chat({ message: 'Cuanto gaste?', threadId: '   ' }),
+    BadRequestException,
+  );
 });
 
 test('ChatController rejects empty messages arrays', async () => {

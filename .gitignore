@@ -5,6 +5,9 @@ node_modules/
 .turbo/
 .next/
 .mastra/
+apps/ai/.mastra/
+*.db-wal
+*.db-shm
 dist/
 build/
 out/

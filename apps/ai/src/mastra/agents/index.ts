@@ -12,15 +12,32 @@ import {
   spendingSummaryTool,
   updateFinancialMemoryTool,
 } from '../tools/index.ts';
+import {
+  createGastiConversationMemoryContext,
+  gastiConversationMemory,
+  type GastiConversationMemoryContext,
+} from './conversation-memory.ts';
 import { getGastiModelId, getGeminiApiKey } from './model.ts';
 
+export {
+  DEMO_RESOURCE_ID,
+  LOCAL_DEMO_DEFAULT_THREAD_ID,
+  SanitizedGastiMemory,
+  createGastiConversationMemoryContext,
+  gastiConversationMemory,
+  memoryDatabasePath,
+  sanitizeMastraMemoryMessagesForGasti,
+} from './conversation-memory.ts';
 export { getGastiModelFallbackChain, getGastiModelId, getGeminiApiKey } from './model.ts';
 
 const GASTI_MODEL_RUNTIME_CONTEXT_KEY = 'gasti.modelId';
 
 type GenerateGastiFinanceAgentOptions = {
   maxSteps?: number;
+  memory?: GastiConversationMemoryContext;
   modelId?: string;
+  resourceId?: string;
+  threadId?: string;
 };
 
 export type GastiFinanceAgentMessage = {
@@ -115,18 +132,20 @@ export const gastiFinanceAgent = new Agent({
     return google(runtimeModelId || getGastiModelId());
   },
   tools: financeTools,
+  memory: gastiConversationMemory,
 });
 
 export async function generateGastiFinanceAgent(
   messages: string | GastiFinanceAgentMessage[],
-  { maxSteps, modelId }: GenerateGastiFinanceAgentOptions = {},
+  { maxSteps, memory, modelId, resourceId, threadId }: GenerateGastiFinanceAgentOptions = {},
 ): Promise<GenerateGastiFinanceAgentResult> {
   const runtimeContext = new RuntimeContext();
   const trimmedModelId = modelId?.trim();
+  const memoryContext = memory ?? createGastiConversationMemoryContext({ resourceId, threadId });
 
   if (trimmedModelId) {
     runtimeContext.set(GASTI_MODEL_RUNTIME_CONTEXT_KEY, trimmedModelId);
   }
 
-  return await gastiFinanceAgent.generate(messages, { maxSteps, runtimeContext });
+  return await gastiFinanceAgent.generate(messages, { maxSteps, memory: memoryContext, runtimeContext });
 }

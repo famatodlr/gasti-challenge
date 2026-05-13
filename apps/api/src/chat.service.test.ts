@@ -23,6 +23,10 @@ type CapturedGenerateCall = {
   messages: TestChatMessage[];
   modelId?: string;
   maxSteps?: number;
+  memory?: {
+    resource: string;
+    thread: { id: string };
+  };
 };
 
 function userConversation(content: string): TestChatMessage[] {
@@ -130,6 +134,59 @@ test('ChatService invokes the finance agent with the full message history', asyn
   }
 });
 
+test('ChatService passes resourceId and threadId as Mastra memory context', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+  const messages = userConversation('Qué veníamos hablando?');
+
+  try {
+    const service = new ChatService({
+      generate: async (receivedMessages, options) => {
+        assert.deepEqual(receivedMessages, messages);
+        assert.equal(options?.maxSteps, 5);
+        assert.equal(options?.modelId, 'gemini-2.5-flash');
+        assert.deepEqual(options?.memory, {
+          resource: 'demo-user',
+          thread: { id: 'thread-mayo' },
+        });
+
+        return { text: 'Venías evaluando tus gastos de mayo.' };
+      },
+    });
+
+    assert.equal(
+      await service.answer(messages, { resourceId: 'demo-user', threadId: 'thread-mayo' }),
+      'Venías evaluando tus gastos de mayo.',
+    );
+  } finally {
+    restoreEnv();
+    restoreLoggerLog();
+  }
+});
+
+test('ChatService uses the local demo fallback memory thread when no threadId is provided', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService({
+      generate: async (_receivedMessages, options) => {
+        assert.deepEqual(options?.memory, {
+          resource: 'demo-user',
+          thread: { id: 'demo-thread' },
+        });
+
+        return { text: 'Respuesta con thread demo.' };
+      },
+    });
+
+    assert.equal(await service.answer(userConversation('Hola')), 'Respuesta con thread demo.');
+  } finally {
+    restoreEnv();
+    restoreLoggerLog();
+  }
+});
+
 test('ChatService falls back to the next model with the same message history on provider quota errors', async () => {
   const restoreEnv = useTestAiEnv({
     GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-primary,gemini-secondary,gemini-third',
@@ -151,6 +208,7 @@ test('ChatService falls back to the next model with the same message history on 
           messages: copyMessages(receivedMessages),
           modelId: options?.modelId,
           maxSteps: options?.maxSteps,
+          memory: options?.memory,
         });
 
         if (options?.modelId === 'gemini-primary') {
@@ -161,13 +219,23 @@ test('ChatService falls back to the next model with the same message history on 
       },
     });
 
-    assert.equal(await service.answer(messages), 'Respuesta desde fallback.');
+    assert.equal(
+      await service.answer(messages, { resourceId: 'demo-user', threadId: 'fallback-thread' }),
+      'Respuesta desde fallback.',
+    );
     assert.deepEqual(
       calls.map((call) => call.modelId),
       ['gemini-primary', 'gemini-secondary'],
     );
     assert.deepEqual(calls.map((call) => call.maxSteps), [5, 5]);
     assert.deepEqual(calls.map((call) => call.messages), [messages, messages]);
+    assert.deepEqual(
+      calls.map((call) => call.memory),
+      [
+        { resource: 'demo-user', thread: { id: 'fallback-thread' } },
+        { resource: 'demo-user', thread: { id: 'fallback-thread' } },
+      ],
+    );
     assert.deepEqual(
       loggedWarnings.map(([payload]) => (payload as { event: string }).event),
       ['chat.model_fallback_retrying'],
@@ -592,7 +660,11 @@ test('ChatService retries invalid tool argument failures once with corrective in
 
     const service = new ChatService({
       generate: async (receivedMessages, options) => {
-        calls.push({ messages: copyMessages(receivedMessages), maxSteps: options?.maxSteps });
+        calls.push({
+          messages: copyMessages(receivedMessages),
+          maxSteps: options?.maxSteps,
+          memory: options?.memory,
+        });
 
         if (calls.length === 1) {
           throw invalidToolError;
@@ -602,10 +674,20 @@ test('ChatService retries invalid tool argument failures once with corrective in
       },
     });
 
-    assert.equal(await service.answer(messages), 'Salud fue la categoria que mas aumento.');
+    assert.equal(
+      await service.answer(messages, { resourceId: 'demo-user', threadId: 'retry-thread' }),
+      'Salud fue la categoria que mas aumento.',
+    );
 
     assert.equal(calls.length, 2);
     assert.deepEqual(calls.map((call) => call.maxSteps), [5, 5]);
+    assert.deepEqual(
+      calls.map((call) => call.memory),
+      [
+        { resource: 'demo-user', thread: { id: 'retry-thread' } },
+        { resource: 'demo-user', thread: { id: 'retry-thread' } },
+      ],
+    );
     assert.deepEqual(calls[0].messages, messages);
     assert.deepEqual(calls[1].messages.slice(0, -1), messages);
 

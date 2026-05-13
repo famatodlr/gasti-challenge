@@ -13,6 +13,7 @@ Shared conventions:
 - Tool outputs include enough transaction IDs for the agent to cite evidence.
 - Tools perform deterministic data work; the agent turns results into conversation.
 - No tool calls live APIs in the challenge version. Raw transaction data comes from `data/transactions.json`; structured user memory comes from `data/financial-memory.json`.
+- Mastra Memory is a separate conversation-continuity layer. Tools must not use it as a source of structured financial facts, calculation data, raw transactions, or RAG context.
 - The raw file keeps original broad categories. Tools expose normalized finance categories and keep the original value as `rawCategory` on transaction rows.
 - Public tool inputs use flat date fields for LLM reliability. Date-bounded tools use top-level `from` and `to`; comparison tools use `currentFrom`, `currentTo`, `baselineFrom`, and `baselineTo`.
 
@@ -101,7 +102,7 @@ Notes:
 
 Purpose: expose deterministic user-level financial context for the single demo resource.
 
-Why it exists: transaction tools answer what happened in the mock ledger; financial memory answers what the user has explicitly told Gasti about income, goals, preferences, categories to watch, and confirmed recurring context. This is not generic RAG and does not use embeddings.
+Why it exists: transaction tools answer what happened in the mock ledger; financial memory answers what the user has explicitly told Gasti about income, goals, preferences, categories to watch, and confirmed recurring context. This is not Mastra Memory, generic RAG, semantic recall, or embeddings.
 
 Input:
 
@@ -167,7 +168,7 @@ Notes:
 
 Purpose: persist explicit user-stated or user-confirmed financial facts for the single demo resource.
 
-Why it exists: the chat API is stateless beyond the client-provided `messages[]`, so stable context such as income, saving goals, watch categories, confirmed fixed expenses, recurring observations, and response preferences needs an app-owned write path. This is structured JSON-backed financial memory, not Mastra Memory, not RAG, and not embeddings.
+Why it exists: stable context such as income, saving goals, watch categories, confirmed fixed expenses, recurring observations, and response preferences needs an app-owned write path. This is structured JSON-backed financial memory, not Mastra conversation memory, not RAG, and not embeddings.
 
 Input:
 

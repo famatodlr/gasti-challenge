@@ -118,9 +118,22 @@ Register these tools on the agent:
 
 The tool details and schemas live in `docs/tools.md`.
 
-## Current Conversation Context
+## Conversation Memory
 
-The current version does not implement persistent Mastra Memory. The API accepts client-supplied `messages[]` history and passes it to the agent as stateless conversation context for a single request. The backend does not persist threads, resources, user accounts, summaries, or embeddings.
+The current version uses Mastra Memory for persistent conversation continuity. The chat API accepts optional `resourceId` and `threadId` fields and invokes the agent with Mastra's memory context:
+
+```ts
+memory: {
+  resource: resourceId,
+  thread: { id: threadId },
+}
+```
+
+The default `resourceId` is `demo-user`. If no `threadId` is provided, the backend uses `demo-thread` only for local demo and backwards compatibility. Production callers must provide a real per-user or per-session thread ID.
+
+Local development stores Mastra Memory in `apps/ai/.mastra/memory.db` with LibSQL. The path is resolved from the AI module location, not `process.cwd()`, so commands run from the repo root, `apps/api`, or `apps/ai` all use the same local DB.
+
+Mastra Memory is conversation history only. It should not store raw transaction rows, bank data, secrets, API keys, or structured financial facts.
 
 The agent now has deterministic editable financial memory in `data/financial-memory.json`, exposed through `getFinancialMemory` and updated only through `updateFinancialMemory`. This is app-owned structured context for the single demo resource `demo-user`, not a generic RAG layer and not Mastra-managed persistence.
 
@@ -137,54 +150,13 @@ Current financial memory should not store raw transaction rows, transaction IDs,
 
 `updateFinancialMemory` validates a strict patch schema, rejects unsupported or raw/sensitive fields, deduplicates append-only facts, and writes stable pretty JSON. It is intended for user-stated or user-confirmed facts only; transaction-derived observations remain analysis unless the user explicitly confirms them.
 
-## Future Evolution: Mastra Memory
+## Memory Safety
 
-Mastra Memory is a future product evolution, not a current persistence feature.
+Gasti uses a `SanitizedGastiMemory` wrapper around Mastra Memory. The installed Mastra version exposes a clean `saveMessages` method, so the wrapper sanitizes messages before delegating to Mastra persistence.
 
-If implemented later, it would require the two small dependencies:
+The sanitizer preserves visible user and assistant text, removes tool invocation parts and tool result payloads, strips attachments and reasoning payloads, and redacts transaction IDs such as `txn_001`. This keeps deterministic transaction tool output from becoming a hidden memory store.
 
-- `@mastra/memory`
-- `@mastra/libsql`
-
-Recommended first future implementation:
-
-- Add a shared LibSQL storage adapter in `apps/ai/src/mastra/index.ts`.
-- Add `memory: new Memory()` to `gastiFinanceAgent`.
-- Pass `memory: { thread, resource }` when the API invokes the agent.
-- Use one stable demo `resource`, such as `demo-user`, and a generated `thread` from the UI.
-
-Future memory should store:
-
-- Preferred language.
-- Preferred answer length.
-- Monthly income, only if the user states it.
-- Monthly spending target, only if the user states it.
-- Categories the user wants to watch.
-- Known recurring expenses the user explicitly says are important or unwanted.
-
-Future memory should not store:
-
-- Raw transaction rows.
-- API keys or secrets.
-- Sensitive real bank data.
-- Inferences presented as facts.
-
-Working memory template:
-
-```md
-# User Finance Preferences
-
-- Preferred language:
-- Preferred answer style:
-- Monthly income:
-- Monthly spending target:
-- Categories to watch:
-- Recurring expenses the user cares about:
-- Recurring expenses the user wants to reduce:
-- Notes explicitly provided by the user:
-```
-
-Semantic recall should stay optional. If it is added later, keep it scoped to conversation context, not transaction storage.
+This sanitizer is a guardrail for the current Mastra integration, not a replacement for tool schema discipline. Finance tools should still avoid returning data that belongs in conversation memory, and semantic recall/RAG remains future work.
 
 ## Workflow Strategy
 

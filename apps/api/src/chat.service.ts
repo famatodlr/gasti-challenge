@@ -8,12 +8,23 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { generateGastiFinanceAgent, getGastiModelFallbackChain } from 'ai/mastra';
+import {
+  DEMO_RESOURCE_ID,
+  LOCAL_DEMO_DEFAULT_THREAD_ID,
+  generateGastiFinanceAgent,
+  getGastiModelFallbackChain,
+} from 'ai/mastra';
 
-import type { ChatMessage } from './chat.types.js';
+import type { ChatMessage, ChatRequestContext } from './chat.types.js';
+
+type AgentMemoryContext = {
+  resource: string;
+  thread: { id: string };
+};
 
 type AgentGenerateOptions = {
   maxSteps?: number;
+  memory?: AgentMemoryContext;
   modelId?: string;
 };
 
@@ -71,6 +82,18 @@ type AgentGenerationMetadata = {
   lastMessageLength: number;
   totalContentLength: number;
 };
+
+function normalizeMemoryIdentifier(value: string | undefined, fallback: string): string {
+  const trimmedValue = value?.trim();
+  return trimmedValue || fallback;
+}
+
+function createAgentMemoryContext(context: ChatRequestContext = {}): AgentMemoryContext {
+  return {
+    resource: normalizeMemoryIdentifier(context.resourceId, DEMO_RESOURCE_ID),
+    thread: { id: normalizeMemoryIdentifier(context.threadId, LOCAL_DEMO_DEFAULT_THREAD_ID) },
+  };
+}
 
 class GastiModelFallbackExhaustedError extends Error {
   constructor(
@@ -394,12 +417,13 @@ export class ChatService {
 
   constructor(@Inject(GASTI_FINANCE_AGENT) private readonly agent: FinanceAgent = defaultFinanceAgent) {}
 
-  async answer(messages: ChatMessage[]): Promise<string> {
+  async answer(messages: ChatMessage[], context: ChatRequestContext = {}): Promise<string> {
     if (!process.env.GEMINI_API_KEY?.trim()) {
       throw new ServiceUnavailableException('GEMINI_API_KEY is required to use the chat endpoint.');
     }
 
     const lastMessage = messages.at(-1);
+    const memory = createAgentMemoryContext(context);
 
     this.logger.log({
       event: 'chat.request_received',
@@ -407,10 +431,13 @@ export class ChatService {
       messageCount: messages.length,
       lastMessageLength: lastMessage?.content.length ?? 0,
       totalContentLength: totalContentLength(messages),
+      resourceId: memory.resource,
+      threadId: memory.thread.id,
+      localDemoFallbackThread: !context.threadId?.trim(),
     });
 
     try {
-      return await this.generateAnswerWithModelFallback(messages, 1);
+      return await this.generateAnswerWithModelFallback(messages, 1, memory);
     } catch (error) {
       if (isInvalidToolArgumentsError(error)) {
         this.logger.warn({
@@ -422,7 +449,7 @@ export class ChatService {
         });
 
         try {
-          return await this.generateAnswerWithModelFallback(createInvalidToolArgumentsRetryMessages(messages), 2);
+          return await this.generateAnswerWithModelFallback(createInvalidToolArgumentsRetryMessages(messages), 2, memory);
         } catch (retryError) {
           if (retryError instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(retryError)) {
             this.throwProviderQuotaExceeded(retryError);
@@ -446,14 +473,18 @@ export class ChatService {
     }
   }
 
-  private async generateAnswerWithModelFallback(messages: ChatMessage[], attempt: number): Promise<string> {
+  private async generateAnswerWithModelFallback(
+    messages: ChatMessage[],
+    attempt: number,
+    memory: AgentMemoryContext,
+  ): Promise<string> {
     const modelIds = getGastiModelFallbackChain();
     const quotaErrors: unknown[] = [];
     const emptyAnswerErrors: EmptyAgentAnswerError[] = [];
 
     for (const [modelIndex, modelId] of modelIds.entries()) {
       try {
-        return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length);
+        return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length, memory);
       } catch (error) {
         if (isProviderQuotaError(error)) {
           quotaErrors.push(error);
@@ -516,7 +547,7 @@ export class ChatService {
           });
 
           try {
-            return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length);
+            return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length, memory);
           } catch (retryError) {
             if (isEmptyAgentAnswerError(retryError)) {
               emptyAnswerErrors.push(retryError);
@@ -540,6 +571,7 @@ export class ChatService {
     modelId: string,
     modelIndex: number,
     modelCount: number,
+    memory: AgentMemoryContext,
   ): Promise<string> {
     const lastMessage = messages.at(-1);
 
@@ -553,9 +585,11 @@ export class ChatService {
       messageCount: messages.length,
       lastMessageLength: lastMessage?.content.length ?? 0,
       totalContentLength: totalContentLength(messages),
+      resourceId: memory.resource,
+      threadId: memory.thread.id,
     });
 
-    const result = await this.agent.generate(messages, { maxSteps: 5, modelId });
+    const result = await this.agent.generate(messages, { maxSteps: 5, memory, modelId });
     const generation = buildAgentGenerationMetadata(result, messages, modelId);
 
     if (!result.text.trim()) {

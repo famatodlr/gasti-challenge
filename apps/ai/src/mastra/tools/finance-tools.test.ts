@@ -135,10 +135,25 @@ test('getFinancialMemoryTool exposes structured user context without raw transac
   assert.equal(parsedFinancialMemory.schemaVersion, 1);
   assert.equal(parsedFinancialMemory.resourceId, 'demo-user');
   assert.equal(parsedFinancialMemory.currency, 'ARS');
-  assert.deepEqual(parsedFinancialMemory.knownIncome, []);
+  assert.deepEqual(parsedFinancialMemory.knownIncome, [
+    {
+      label: 'Ingreso mensual',
+      amount: 1500000,
+      currency: 'ARS',
+      cadence: 'monthly',
+      source: 'user_stated',
+    },
+  ]);
   assert.deepEqual(parsedFinancialMemory.fixedExpenses, []);
-  assert.deepEqual(parsedFinancialMemory.savingGoals, []);
-  assert.deepEqual(parsedFinancialMemory.watchCategories, []);
+  assert.deepEqual(parsedFinancialMemory.savingGoals, [
+    {
+      name: 'Viaje a Japón',
+      currency: 'ARS',
+      targetDate: '2025-01-01',
+      source: 'user_stated',
+    },
+  ]);
+  assert.deepEqual(parsedFinancialMemory.watchCategories, ['delivery']);
   assert.deepEqual(parsedFinancialMemory.recurringObservations, []);
   assert.deepEqual(parsedFinancialMemory.preferences, {
     preferredLanguage: 'es-AR',

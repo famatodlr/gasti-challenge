@@ -10,11 +10,6 @@ type ChatMessage = {
   content: string;
 };
 
-type ApiChatMessage = {
-  role: ChatRole;
-  content: string;
-};
-
 type ChatResponse = {
   answer?: unknown;
   error?: unknown;
@@ -26,6 +21,10 @@ const starterQuestions = [
   'Detectá mis gastos recurrentes',
   'Proyectá mi gasto de este mes',
 ];
+
+const DEMO_RESOURCE_ID = 'demo-user';
+const THREAD_STORAGE_KEY = 'gasti.threadId';
+const LOCAL_DEMO_DEFAULT_THREAD_ID = 'demo-thread';
 
 const initialMessages: ChatMessage[] = [
   {
@@ -43,6 +42,31 @@ function createMessage(role: ChatRole, content: string): ChatMessage {
   };
 }
 
+function createThreadId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `thread-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function readOrCreateStoredThreadId(): string {
+  if (typeof window === 'undefined') {
+    return LOCAL_DEMO_DEFAULT_THREAD_ID;
+  }
+
+  const storedThreadId = window.localStorage.getItem(THREAD_STORAGE_KEY)?.trim();
+
+  if (storedThreadId) {
+    return storedThreadId;
+  }
+
+  const nextThreadId = createThreadId();
+  window.localStorage.setItem(THREAD_STORAGE_KEY, nextThreadId);
+
+  return nextThreadId;
+}
+
 function getErrorMessage(payload: ChatResponse | null): string {
   if (payload && typeof payload.error === 'string') {
     return payload.error;
@@ -51,24 +75,32 @@ function getErrorMessage(payload: ChatResponse | null): string {
   return 'No pude conectar con Gasti. Revisá que el backend esté corriendo e intentá de nuevo.';
 }
 
-function toApiMessages(messages: ChatMessage[]): ApiChatMessage[] {
-  return messages
-    .filter((message) => message.id !== 'welcome')
-    .map(({ role, content }) => ({ role, content: content.trim() }))
-    .filter((message) => message.content.length > 0);
-}
-
 export default function Page() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState(LOCAL_DEMO_DEFAULT_THREAD_ID);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isSendingRef = useRef(false);
 
   useEffect(() => {
+    setThreadId(readOrCreateStoredThreadId());
+  }, []);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  function getActiveThreadId(): string {
+    const activeThreadId = readOrCreateStoredThreadId();
+
+    if (activeThreadId !== threadId) {
+      setThreadId(activeThreadId);
+    }
+
+    return activeThreadId;
+  }
 
   async function sendMessage(content: string) {
     const trimmedContent = content.trim();
@@ -92,7 +124,9 @@ export default function Page() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: toApiMessages(nextMessages),
+          message: trimmedContent,
+          resourceId: DEMO_RESOURCE_ID,
+          threadId: getActiveThreadId(),
         }),
       });
 
@@ -115,6 +149,19 @@ export default function Page() {
     }
   }
 
+  function startNewChat() {
+    const nextThreadId = createThreadId();
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(THREAD_STORAGE_KEY, nextThreadId);
+    }
+
+    setThreadId(nextThreadId);
+    setMessages(initialMessages);
+    setInput('');
+    setError(null);
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void sendMessage(input);
@@ -125,8 +172,20 @@ export default function Page() {
       <section className="flex h-[min(860px,calc(100vh-48px))] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-[#d9e2dd] bg-[#fbfdfc] shadow-[0_24px_70px_rgba(32,36,33,0.12)]">
         <header className="border-b border-[#dfe7e2] px-5 py-5 sm:px-7">
           <div>
-            <h1 className="text-2xl font-semibold tracking-normal text-[#161616]">Gasti</h1>
-            <p className="mt-1 text-sm text-[#66746b]">Tu asistente financiero</p>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-normal text-[#161616]">Gasti</h1>
+                <p className="mt-1 text-sm text-[#66746b]">Tu asistente financiero</p>
+              </div>
+              <button
+                type="button"
+                onClick={startNewChat}
+                disabled={isLoading}
+                className="shrink-0 rounded-md border border-[#cbd8d1] bg-white px-3 py-2 text-sm font-medium text-[#435048] transition hover:border-[#1f6f5b] hover:text-[#1f6f5b] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Nuevo chat
+              </button>
+            </div>
           </div>
         </header>
 
