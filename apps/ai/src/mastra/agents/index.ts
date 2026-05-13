@@ -29,6 +29,11 @@ export {
   sanitizeMastraMemoryMessagesForGasti,
 } from './conversation-memory.ts';
 export { getGastiModelFallbackChain, getGastiModelId, getGeminiApiKey } from './model.ts';
+export {
+  GastiModelFallbackExhaustedError,
+  generateWithGastiModelFallback,
+  isGastiQuotaOrRateLimitError,
+} from './model-fallback.ts';
 
 const GASTI_MODEL_RUNTIME_CONTEXT_KEY = 'gasti.modelId';
 

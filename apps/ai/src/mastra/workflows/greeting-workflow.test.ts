@@ -48,3 +48,18 @@ test('greeting workflow falls back gracefully when there is not enough data', as
   assert.equal(result.snapshot.insights.length, 0);
   assert.match(result.answer, /Todavía no veo suficiente movimiento este mes/);
 });
+
+test('greeting workflow appends fallback activity label when narrator retries model', async () => {
+  const result = await runGreetingFinancialSnapshotWorkflow(
+    { message: 'Hola', currentDate: '2026-05-13' },
+    {
+      answerGenerator: async ({ onActivityLabel }) => {
+        onActivityLabel?.('Reintentando con otro modelo');
+        return 'Hola Franco 👋';
+      },
+    },
+  );
+
+  assert.equal(result.answer, 'Hola Franco 👋');
+  assert.deepEqual(result.activityLabels.at(-1), 'Reintentando con otro modelo');
+});

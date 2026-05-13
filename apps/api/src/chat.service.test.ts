@@ -7,6 +7,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { GastiModelFallbackExhaustedError } from 'ai/mastra';
 
 import { ChatService } from './chat.service.ts';
 import type { ChatRequestContext, NormalizedChatRequest } from './chat.types.ts';
@@ -397,6 +398,81 @@ test('ChatService streams workflow activity as valid chat events', async () => {
       ],
     );
     assert.equal(events.at(-1)?.answer, 'Resumen mensual por workflow.');
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService includes workflow fallback activity labels in step metadata', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService(
+      {
+        generate: async () => {
+          throw new Error('agent should not be called');
+        },
+      },
+      {
+        runMonthlyReview: async () => ({
+          answer: 'Resumen mensual por workflow.',
+          activityLabels: ['Detectando período', 'Armando respuesta', 'Reintentando con otro modelo'],
+        }),
+        runGreetingSnapshot: async () => {
+          throw new Error('greeting workflow should not be called');
+        },
+      },
+    );
+
+    const response = await service.answerWithSteps(memoryChatRequest(userConversation('Resumen de mayo 2026')));
+
+    assert.deepEqual(
+      response.steps?.map((event) => event.label),
+      [
+        'Analizando consulta',
+        'Detectando período',
+        'Armando respuesta',
+        'Reintentando con otro modelo',
+        'Respuesta final generada',
+      ],
+    );
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService maps workflow model exhaustion to the same public quota error', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService(
+      {
+        generate: async () => {
+          throw new Error('agent should not be called');
+        },
+      },
+      {
+        runMonthlyReview: async () => {
+          throw new GastiModelFallbackExhaustedError(
+            ['gemini-primary', 'gemini-secondary'],
+            [new Error('quota1'), new Error('quota2')],
+            new Error('quota2'),
+          );
+        },
+        runGreetingSnapshot: async () => {
+          throw new Error('greeting workflow should not be called');
+        },
+      },
+    );
+
+    await assert.rejects(
+      () => service.answerWithSteps(memoryChatRequest(userConversation('Resumen financiero de mayo 2026'))),
+      assertProviderQuotaException,
+    );
   } finally {
     restoreLoggerLog();
     restoreEnv();

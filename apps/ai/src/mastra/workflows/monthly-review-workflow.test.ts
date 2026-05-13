@@ -88,3 +88,18 @@ test('monthly review workflow returns a helpful clarification when the period is
   assert.equal(result.review, undefined);
   assert.match(result.answer, /¿De qué mes querés que haga el resumen financiero\?/);
 });
+
+test('monthly review workflow appends fallback activity label when narrator retries model', async () => {
+  const result = await runMonthlyFinancialReviewWorkflow(
+    { message: 'Haceme un resumen financiero de mayo 2026', currentDate: '2026-05-13' },
+    {
+      answerGenerator: async ({ onActivityLabel }) => {
+        onActivityLabel?.('Reintentando con otro modelo');
+        return 'Respuesta final';
+      },
+    },
+  );
+
+  assert.equal(result.answer, 'Respuesta final');
+  assert.deepEqual(result.activityLabels.at(-1), 'Reintentando con otro modelo');
+});

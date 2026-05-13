@@ -6,7 +6,8 @@ import { z } from 'zod';
 
 import { loadTransactions as loadDefaultTransactions } from '../domain/transaction-repository.ts';
 import { dateRangeSchema, dateStringSchema, formatARS, type Transaction, transactionSchema } from '../domain/transaction.ts';
-import { getGastiModelId, getGeminiApiKey } from '../agents/model.ts';
+import { generateWithGastiModelFallback } from '../agents/model-fallback.ts';
+import { getGeminiApiKey } from '../agents/model.ts';
 import {
   calculateMonthlyReviewKpis,
   compareMonthlyReviewPeriod,
@@ -77,6 +78,7 @@ export type GreetingAnswerGeneratorInput = {
   message: string;
   snapshot: GreetingFinancialSnapshot;
   modelId?: string;
+  onActivityLabel?: (label: string) => void;
 };
 
 export type GreetingAnswerGenerator = (input: GreetingAnswerGeneratorInput) => Promise<string>;
@@ -98,7 +100,7 @@ Use only the structured snapshot provided. Do not invent financial data. Spanish
   model: ({ runtimeContext }) => {
     const runtimeModel = runtimeContext.get(WORKFLOW_MODEL_RUNTIME_CONTEXT_KEY);
     const runtimeModelId = typeof runtimeModel === 'string' ? runtimeModel.trim() : '';
-    return google(runtimeModelId || getGastiModelId());
+    return google(runtimeModelId);
   },
 });
 
@@ -129,35 +131,39 @@ export function buildDeterministicGreetingAnswer({ snapshot }: Pick<GreetingAnsw
 export async function generateGreetingAnswerWithAgent({
   message,
   snapshot,
-  modelId,
+  onActivityLabel,
 }: GreetingAnswerGeneratorInput): Promise<string> {
   if (!process.env.GEMINI_API_KEY?.trim()) {
     return buildDeterministicGreetingAnswer({ snapshot });
   }
 
-  const runtimeContext = new RuntimeContext();
-  const trimmedModelId = modelId?.trim();
+  const generatedAnswer = await generateWithGastiModelFallback({
+    source: 'workflow.greeting_snapshot.narrator',
+    generate: async (attemptedModelId) => {
+      const runtimeContext = new RuntimeContext();
+      runtimeContext.set(WORKFLOW_MODEL_RUNTIME_CONTEXT_KEY, attemptedModelId);
 
-  if (trimmedModelId) {
-    runtimeContext.set(WORKFLOW_MODEL_RUNTIME_CONTEXT_KEY, trimmedModelId);
-  }
-
-  const result = await greetingNarratorAgent.generate(
-    [
-      {
-        role: 'user',
-        content: `Mensaje original: ${message}
+      const result = await greetingNarratorAgent.generate(
+        [
+          {
+            role: 'user',
+            content: `Mensaje original: ${message}
 
 Snapshot estructurado:
 ${JSON.stringify(snapshot, null, 2)}
 
 Escribí el saludo final. Mantenelo corto.`,
-      },
-    ],
-    { maxSteps: 1, runtimeContext },
-  );
+          },
+        ],
+        { maxSteps: 1, runtimeContext },
+      );
 
-  const generatedAnswer = result.text.trim();
+      return result.text.trim();
+    },
+    onFallbackRetrying: () => {
+      onActivityLabel?.('Reintentando con otro modelo');
+    },
+  });
 
   if (!generatedAnswer || generatedAnswer.length > 420 || countLikelyEmoji(generatedAnswer) > 1) {
     return buildDeterministicGreetingAnswer({ snapshot });
@@ -288,14 +294,19 @@ export function createGreetingFinancialSnapshotWorkflow({
         throw new Error('Greeting snapshot was not built.');
       }
 
+      const activityLabels: string[] = [...GREETING_WORKFLOW_ACTIVITY_LABELS];
+
       return {
         answer: await answerGenerator({
           message: inputData.message,
           snapshot: inputData.snapshot,
           modelId: inputData.modelId,
+          onActivityLabel: (label) => {
+            activityLabels.push(label);
+          },
         }),
         snapshot: inputData.snapshot,
-        activityLabels: [...GREETING_WORKFLOW_ACTIVITY_LABELS],
+        activityLabels,
       };
     },
   });

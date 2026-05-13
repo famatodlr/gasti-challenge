@@ -11,10 +11,12 @@ import {
 } from '@nestjs/common';
 import {
   DEMO_RESOURCE_ID,
+  GastiModelFallbackExhaustedError,
   LOCAL_DEMO_DEFAULT_THREAD_ID,
   detectGastiWorkflowIntent,
   generateGastiFinanceAgent,
   getGastiModelFallbackChain,
+  isGastiQuotaOrRateLimitError,
   runGreetingFinancialSnapshotWorkflow,
   runMonthlyFinancialReviewWorkflow,
   streamGastiFinanceAgent,
@@ -112,13 +114,6 @@ const ACTIVITY_GENERATING_FINAL_LABEL = 'Generando respuesta final';
 const ACTIVITY_FINAL_ANSWER_LABEL = 'Respuesta final generada';
 const ACTIVITY_MODEL_FALLBACK_LABEL = 'Reintentando con otro modelo';
 const ACTIVITY_EMPTY_ANSWER_RETRY_LABEL = 'Reintentando respuesta vacía';
-const PROVIDER_QUOTA_MESSAGE_SIGNALS = [
-  'exceeded your current quota',
-  'Quota exceeded',
-  'rate limit',
-  'rate-limit',
-  'RESOURCE_EXHAUSTED',
-];
 
 type SerializeAgentErrorOptions = {
   includeStack?: boolean;
@@ -159,17 +154,6 @@ function createAgentMemoryContext(context: ChatRequestContext = {}): AgentMemory
     resource: normalizeMemoryIdentifier(context.resourceId, DEMO_RESOURCE_ID),
     thread: { id: normalizeMemoryIdentifier(context.threadId, LOCAL_DEMO_DEFAULT_THREAD_ID) },
   };
-}
-
-class GastiModelFallbackExhaustedError extends Error {
-  constructor(
-    readonly models: readonly string[],
-    readonly errors: readonly unknown[],
-    cause: unknown,
-  ) {
-    super(`All Gemini fallback models were exhausted: ${models.join(', ')}`, { cause });
-    this.name = 'GastiModelFallbackExhaustedError';
-  }
 }
 
 class EmptyAgentAnswerError extends Error {
@@ -277,15 +261,6 @@ function matchesAnySignal(value: string | undefined, signals: readonly string[])
   return Boolean(value && signals.some((signal) => value.includes(signal)));
 }
 
-function matchesAnySignalCaseInsensitive(value: string | undefined, signals: readonly string[]): boolean {
-  if (!value) {
-    return false;
-  }
-
-  const normalizedValue = value.toLocaleLowerCase();
-  return signals.some((signal) => normalizedValue.includes(signal.toLocaleLowerCase()));
-}
-
 function isInvalidToolArgumentsError(error: unknown, depth = 0): boolean {
   if (typeof error !== 'object' || error === null) {
     return matchesAnySignal(String(error), INVALID_TOOL_ARGUMENT_MESSAGE_SIGNALS);
@@ -308,104 +283,6 @@ function isInvalidToolArgumentsError(error: unknown, depth = 0): boolean {
   }
 
   return isInvalidToolArgumentsError(cause, depth + 1);
-}
-
-function isTooManyRequestsStatus(value: unknown): boolean {
-  return value === HttpStatus.TOO_MANY_REQUESTS || value === String(HttpStatus.TOO_MANY_REQUESTS);
-}
-
-function objectHasTooManyRequestsStatus(value: object): boolean {
-  const record = value as Record<string, unknown>;
-  const response = record.response;
-
-  if (isTooManyRequestsStatus(record.status) || isTooManyRequestsStatus(record.statusCode)) {
-    return true;
-  }
-
-  if (typeof response === 'object' && response !== null) {
-    const responseRecord = response as Record<string, unknown>;
-    return isTooManyRequestsStatus(responseRecord.status) || isTooManyRequestsStatus(responseRecord.statusCode);
-  }
-
-  return false;
-}
-
-function objectHasProviderQuotaCode(value: object): boolean {
-  const record = value as Record<string, unknown>;
-  const code = record.code;
-  const status = record.status;
-
-  if (isTooManyRequestsStatus(code)) {
-    return true;
-  }
-
-  if (typeof code === 'string' && code.toLocaleUpperCase() === 'RESOURCE_EXHAUSTED') {
-    return true;
-  }
-
-  return typeof status === 'string' && status.toLocaleUpperCase() === 'RESOURCE_EXHAUSTED';
-}
-
-function objectHasGeminiQuotaErrorData(value: object): boolean {
-  const data = (value as Record<string, unknown>).data;
-
-  if (typeof data !== 'object' || data === null) {
-    return false;
-  }
-
-  const error = (data as Record<string, unknown>).error;
-
-  if (typeof error !== 'object' || error === null) {
-    return false;
-  }
-
-  const errorRecord = error as Record<string, unknown>;
-  const code = errorRecord.code;
-  const status = errorRecord.status;
-  const message = errorRecord.message;
-
-  return (
-    isTooManyRequestsStatus(code) ||
-    (typeof status === 'string' && status.toLocaleUpperCase() === 'RESOURCE_EXHAUSTED') ||
-    matchesAnySignalCaseInsensitive(typeof message === 'string' ? message : undefined, PROVIDER_QUOTA_MESSAGE_SIGNALS)
-  );
-}
-
-function objectHasQuotaResponseBody(value: object): boolean {
-  const responseBody = (value as Record<string, unknown>).responseBody;
-
-  return matchesAnySignalCaseInsensitive(
-    typeof responseBody === 'string' ? responseBody : undefined,
-    PROVIDER_QUOTA_MESSAGE_SIGNALS,
-  );
-}
-
-function isProviderQuotaError(error: unknown, depth = 0): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return matchesAnySignalCaseInsensitive(String(error), PROVIDER_QUOTA_MESSAGE_SIGNALS);
-  }
-
-  const name = (error as { name?: unknown }).name;
-  const message = (error as { message?: unknown }).message;
-
-  if (
-    matchesAnySignalCaseInsensitive(typeof message === 'string' ? message : undefined, PROVIDER_QUOTA_MESSAGE_SIGNALS) ||
-    objectHasTooManyRequestsStatus(error) ||
-    objectHasProviderQuotaCode(error) ||
-    objectHasGeminiQuotaErrorData(error) ||
-    objectHasQuotaResponseBody(error)
-  ) {
-    return true;
-  }
-
-  if (depth >= MAX_CAUSE_DEPTH) {
-    return false;
-  }
-
-  const record = error as Record<string, unknown>;
-  const nestedErrors = [readCause(error), record.lastError, ...(Array.isArray(record.errors) ? record.errors : [])];
-
-  return nestedErrors.some((nestedError) => nestedError !== undefined && isProviderQuotaError(nestedError, depth + 1));
 }
 
 function isEmptyAgentAnswerError(error: unknown): error is EmptyAgentAnswerError {
@@ -509,7 +386,7 @@ function getPublicStreamErrorLabel(error: unknown): string {
     return PUBLIC_EMPTY_AGENT_ANSWER_LABEL;
   }
 
-  if (error instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(error)) {
+  if (error instanceof GastiModelFallbackExhaustedError || isGastiQuotaOrRateLimitError(error)) {
     return PUBLIC_PROVIDER_QUOTA_EXCEEDED_LABEL;
   }
 
@@ -762,7 +639,7 @@ export class ChatService {
 
           return { answer, steps: activity.collectedEvents };
         } catch (retryError) {
-          if (retryError instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(retryError)) {
+          if (retryError instanceof GastiModelFallbackExhaustedError || isGastiQuotaOrRateLimitError(retryError)) {
             this.throwProviderQuotaExceeded(retryError);
           }
 
@@ -772,7 +649,7 @@ export class ChatService {
 
           this.logAgentGenerationFailure(retryError);
         }
-      } else if (error instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(error)) {
+      } else if (error instanceof GastiModelFallbackExhaustedError || isGastiQuotaOrRateLimitError(error)) {
         this.throwProviderQuotaExceeded(error);
       } else if (error instanceof GastiEmptyAnswerExhaustedError || isEmptyAgentAnswerError(error)) {
         this.throwEmptyAgentAnswer(error);
@@ -823,7 +700,7 @@ export class ChatService {
 
       yield* this.streamAnswerWithInvalidToolRetry(messages, memory, request.mode, requestMetadata);
     } catch (error) {
-      if (error instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(error)) {
+      if (error instanceof GastiModelFallbackExhaustedError || isGastiQuotaOrRateLimitError(error)) {
         this.logger.warn({
           event: 'chat.provider_quota_exceeded',
           message: 'AI provider quota exceeded',
@@ -895,7 +772,7 @@ export class ChatService {
           activity,
         );
       } catch (error) {
-        if (isProviderQuotaError(error)) {
+        if (isGastiQuotaOrRateLimitError(error)) {
           quotaErrors.push(error);
           const nextModelId = modelIds[modelIndex + 1];
 
@@ -927,8 +804,10 @@ export class ChatService {
         }
 
         if (isEmptyAgentAnswerError(error)) {
+          const modelId = error.metadata.modelId;
+          const modelIndex = modelIds.findIndex((candidate) => candidate === modelId);
           emptyAnswerErrors.push(error);
-          const nextModelId = modelIds[modelIndex + 1];
+          const nextModelId = modelIndex >= 0 ? modelIds[modelIndex + 1] : undefined;
 
           if (nextModelId) {
             this.logger.warn({
@@ -937,13 +816,12 @@ export class ChatService {
               attempt,
               modelId,
               nextModelId,
-              modelIndex: modelIndex + 1,
+              modelIndex: modelIndex >= 0 ? modelIndex + 1 : undefined,
               modelCount: modelIds.length,
               reason: 'empty_answer',
               generation: error.metadata,
             });
             activity?.addWarning(ACTIVITY_EMPTY_ANSWER_RETRY_LABEL);
-
             continue;
           }
 
@@ -963,7 +841,7 @@ export class ChatService {
               messages,
               attempt,
               modelId,
-              modelIndex,
+              modelIndex >= 0 ? modelIndex : modelIds.length - 1,
               modelIds.length,
               memory,
               mode,
@@ -1092,7 +970,7 @@ export class ChatService {
           requestMetadata,
         );
       } catch (retryError) {
-        if (retryError instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(retryError)) {
+        if (retryError instanceof GastiModelFallbackExhaustedError || isGastiQuotaOrRateLimitError(retryError)) {
           throw retryError;
         }
 
@@ -1130,7 +1008,7 @@ export class ChatService {
           requestMetadata,
         );
       } catch (error) {
-        if (isProviderQuotaError(error)) {
+        if (isGastiQuotaOrRateLimitError(error)) {
           quotaErrors.push(error);
           const nextModelId = modelIds[modelIndex + 1];
 

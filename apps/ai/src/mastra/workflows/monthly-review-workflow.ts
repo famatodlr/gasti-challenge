@@ -25,7 +25,8 @@ import {
   type DateRange,
   type Transaction,
 } from '../domain/transaction.ts';
-import { getGastiModelId, getGeminiApiKey } from '../agents/model.ts';
+import { generateWithGastiModelFallback } from '../agents/model-fallback.ts';
+import { getGeminiApiKey } from '../agents/model.ts';
 
 export const MONTHLY_REVIEW_ACTIVITY_LABELS = [
   'Detectando período',
@@ -186,6 +187,7 @@ export type MonthlyReviewAnswerGeneratorInput = {
   review?: MonthlyReviewResult;
   clarification?: string;
   modelId?: string;
+  onActivityLabel?: (label: string) => void;
 };
 
 export type MonthlyReviewAnswerGenerator = (input: MonthlyReviewAnswerGeneratorInput) => Promise<string>;
@@ -226,7 +228,7 @@ Reply in friendly Argentine Spanish with concise Markdown. Use real Markdown bul
   model: ({ runtimeContext }) => {
     const runtimeModel = runtimeContext.get(WORKFLOW_MODEL_RUNTIME_CONTEXT_KEY);
     const runtimeModelId = typeof runtimeModel === 'string' ? runtimeModel.trim() : '';
-    return google(runtimeModelId || getGastiModelId());
+    return google(runtimeModelId);
   },
 });
 
@@ -274,35 +276,39 @@ export async function generateMonthlyReviewAnswerWithAgent({
   message,
   review,
   clarification,
-  modelId,
+  onActivityLabel,
 }: MonthlyReviewAnswerGeneratorInput): Promise<string> {
   if (!process.env.GEMINI_API_KEY?.trim()) {
     return buildDeterministicMonthlyReviewAnswer({ review, clarification });
   }
 
-  const runtimeContext = new RuntimeContext();
-  const trimmedModelId = modelId?.trim();
+  const generatedAnswer = await generateWithGastiModelFallback({
+    source: 'workflow.monthly_review.narrator',
+    generate: async (attemptedModelId) => {
+      const runtimeContext = new RuntimeContext();
+      runtimeContext.set(WORKFLOW_MODEL_RUNTIME_CONTEXT_KEY, attemptedModelId);
 
-  if (trimmedModelId) {
-    runtimeContext.set(WORKFLOW_MODEL_RUNTIME_CONTEXT_KEY, trimmedModelId);
-  }
-
-  const result = await workflowNarratorAgent.generate(
-    [
-      {
-        role: 'user',
-        content: `Mensaje original: ${message}
+      const result = await workflowNarratorAgent.generate(
+        [
+          {
+            role: 'user',
+            content: `Mensaje original: ${message}
 
 Datos estructurados:
 ${JSON.stringify({ review, clarification }, null, 2)}
 
 Escribí la respuesta final para el usuario. Si hay clarification, pedí esa aclaración y no inventes un período.`,
-      },
-    ],
-    { maxSteps: 1, runtimeContext },
-  );
+          },
+        ],
+        { maxSteps: 1, runtimeContext },
+      );
 
-  const generatedAnswer = result.text.trim();
+      return result.text.trim();
+    },
+    onFallbackRetrying: () => {
+      onActivityLabel?.('Reintentando con otro modelo');
+    },
+  });
 
   if (!generatedAnswer || hasBareBoldFinancialRows(generatedAnswer)) {
     return buildDeterministicMonthlyReviewAnswer({ review, clarification });
@@ -675,17 +681,24 @@ export function createMonthlyFinancialReviewWorkflow({
     description: 'Generate the final natural-language answer from the structured review.',
     inputSchema: monthlyReviewWorkflowStateSchema,
     outputSchema: monthlyReviewWorkflowOutputSchema,
-    execute: async ({ inputData }) => ({
-      answer: await answerGenerator({
-        message: inputData.message,
+    execute: async ({ inputData }) => {
+      const activityLabels: string[] = [...MONTHLY_REVIEW_ACTIVITY_LABELS];
+
+      return {
+        answer: await answerGenerator({
+          message: inputData.message,
+          review: inputData.review,
+          clarification: inputData.clarification,
+          modelId: inputData.modelId,
+          onActivityLabel: (label) => {
+            activityLabels.push(label);
+          },
+        }),
         review: inputData.review,
         clarification: inputData.clarification,
-        modelId: inputData.modelId,
-      }),
-      review: inputData.review,
-      clarification: inputData.clarification,
-      activityLabels: [...MONTHLY_REVIEW_ACTIVITY_LABELS],
-    }),
+        activityLabels,
+      };
+    },
   });
 
   return createWorkflow({
