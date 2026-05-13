@@ -15,7 +15,7 @@ import {
   getGastiModelFallbackChain,
 } from 'ai/mastra';
 
-import type { ChatMessage, ChatRequestContext } from './chat.types.js';
+import type { ChatMessage, ChatRequestContext, NormalizedChatRequest } from './chat.types.js';
 
 type AgentMemoryContext = {
   resource: string;
@@ -23,6 +23,7 @@ type AgentMemoryContext = {
 };
 
 type AgentGenerateOptions = {
+  disableMemory?: boolean;
   maxSteps?: number;
   memory?: AgentMemoryContext;
   modelId?: string;
@@ -82,6 +83,19 @@ type AgentGenerationMetadata = {
   lastMessageLength: number;
   totalContentLength: number;
 };
+
+type ChatRequestLogMetadata = Pick<
+  NormalizedChatRequest['metadata'],
+  | 'source'
+  | 'originalMessageCount'
+  | 'normalizedMessageCount'
+  | 'usesMemory'
+  | 'mixedLegacyNormalized'
+  | 'legacyContextCapped'
+  | 'localDemoFallbackThread'
+  | 'hasResourceId'
+  | 'hasThreadId'
+>;
 
 function normalizeMemoryIdentifier(value: string | undefined, fallback: string): string {
   const trimmedValue = value?.trim();
@@ -411,33 +425,49 @@ After the tool succeeds, return the final user-facing answer in Spanish.`,
   ];
 }
 
+function buildChatRequestLogMetadata(request: NormalizedChatRequest): ChatRequestLogMetadata {
+  return {
+    source: request.metadata.source,
+    originalMessageCount: request.metadata.originalMessageCount,
+    normalizedMessageCount: request.metadata.normalizedMessageCount,
+    usesMemory: request.metadata.usesMemory,
+    mixedLegacyNormalized: request.metadata.mixedLegacyNormalized,
+    legacyContextCapped: request.metadata.legacyContextCapped,
+    localDemoFallbackThread: request.metadata.localDemoFallbackThread,
+    hasResourceId: request.metadata.hasResourceId,
+    hasThreadId: request.metadata.hasThreadId,
+  };
+}
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
   constructor(@Inject(GASTI_FINANCE_AGENT) private readonly agent: FinanceAgent = defaultFinanceAgent) {}
 
-  async answer(messages: ChatMessage[], context: ChatRequestContext = {}): Promise<string> {
+  async answer(request: NormalizedChatRequest): Promise<string> {
     if (!process.env.GEMINI_API_KEY?.trim()) {
       throw new ServiceUnavailableException('GEMINI_API_KEY is required to use the chat endpoint.');
     }
 
+    const { messages } = request;
     const lastMessage = messages.at(-1);
-    const memory = createAgentMemoryContext(context);
+    const memory = request.mode === 'memory' ? createAgentMemoryContext(request.context) : undefined;
+    const requestMetadata = buildChatRequestLogMetadata(request);
 
     this.logger.log({
       event: 'chat.request_received',
       message: 'Chat request received',
+      mode: request.mode,
       messageCount: messages.length,
       lastMessageLength: lastMessage?.content.length ?? 0,
       totalContentLength: totalContentLength(messages),
-      resourceId: memory.resource,
-      threadId: memory.thread.id,
-      localDemoFallbackThread: !context.threadId?.trim(),
+      memoryUsed: Boolean(memory),
+      ...requestMetadata,
     });
 
     try {
-      return await this.generateAnswerWithModelFallback(messages, 1, memory);
+      return await this.generateAnswerWithModelFallback(messages, 1, memory, request.mode, requestMetadata);
     } catch (error) {
       if (isInvalidToolArgumentsError(error)) {
         this.logger.warn({
@@ -449,7 +479,13 @@ export class ChatService {
         });
 
         try {
-          return await this.generateAnswerWithModelFallback(createInvalidToolArgumentsRetryMessages(messages), 2, memory);
+          return await this.generateAnswerWithModelFallback(
+            createInvalidToolArgumentsRetryMessages(messages),
+            2,
+            memory,
+            request.mode,
+            requestMetadata,
+          );
         } catch (retryError) {
           if (retryError instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(retryError)) {
             this.throwProviderQuotaExceeded(retryError);
@@ -476,7 +512,9 @@ export class ChatService {
   private async generateAnswerWithModelFallback(
     messages: ChatMessage[],
     attempt: number,
-    memory: AgentMemoryContext,
+    memory: AgentMemoryContext | undefined,
+    mode: NormalizedChatRequest['mode'],
+    requestMetadata: ChatRequestLogMetadata,
   ): Promise<string> {
     const modelIds = getGastiModelFallbackChain();
     const quotaErrors: unknown[] = [];
@@ -484,7 +522,16 @@ export class ChatService {
 
     for (const [modelIndex, modelId] of modelIds.entries()) {
       try {
-        return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length, memory);
+        return await this.generateAnswer(
+          messages,
+          attempt,
+          modelId,
+          modelIndex,
+          modelIds.length,
+          memory,
+          mode,
+          requestMetadata,
+        );
       } catch (error) {
         if (isProviderQuotaError(error)) {
           quotaErrors.push(error);
@@ -547,7 +594,16 @@ export class ChatService {
           });
 
           try {
-            return await this.generateAnswer(messages, attempt, modelId, modelIndex, modelIds.length, memory);
+            return await this.generateAnswer(
+              messages,
+              attempt,
+              modelId,
+              modelIndex,
+              modelIds.length,
+              memory,
+              mode,
+              requestMetadata,
+            );
           } catch (retryError) {
             if (isEmptyAgentAnswerError(retryError)) {
               emptyAnswerErrors.push(retryError);
@@ -571,7 +627,9 @@ export class ChatService {
     modelId: string,
     modelIndex: number,
     modelCount: number,
-    memory: AgentMemoryContext,
+    memory: AgentMemoryContext | undefined,
+    mode: NormalizedChatRequest['mode'],
+    requestMetadata: ChatRequestLogMetadata,
   ): Promise<string> {
     const lastMessage = messages.at(-1);
 
@@ -582,14 +640,23 @@ export class ChatService {
       modelId,
       modelIndex: modelIndex + 1,
       modelCount,
+      mode,
       messageCount: messages.length,
       lastMessageLength: lastMessage?.content.length ?? 0,
       totalContentLength: totalContentLength(messages),
-      resourceId: memory.resource,
-      threadId: memory.thread.id,
+      memoryUsed: Boolean(memory),
+      ...requestMetadata,
     });
 
-    const result = await this.agent.generate(messages, { maxSteps: 5, memory, modelId });
+    const generateOptions: AgentGenerateOptions = { maxSteps: 5, modelId };
+
+    if (memory) {
+      generateOptions.memory = memory;
+    } else {
+      generateOptions.disableMemory = true;
+    }
+
+    const result = await this.agent.generate(messages, generateOptions);
     const generation = buildAgentGenerationMetadata(result, messages, modelId);
 
     if (!result.text.trim()) {
@@ -599,6 +666,9 @@ export class ChatService {
         attempt,
         modelIndex: modelIndex + 1,
         modelCount,
+        mode,
+        memoryUsed: Boolean(memory),
+        ...requestMetadata,
         ...generation,
       });
 
@@ -612,6 +682,9 @@ export class ChatService {
       modelIndex: modelIndex + 1,
       modelCount,
       responseLength: result.text.length,
+      mode,
+      memoryUsed: Boolean(memory),
+      ...requestMetadata,
       ...generation,
     });
 

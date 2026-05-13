@@ -97,7 +97,10 @@ bun run build
 
 - Los datos son mock y locales, cargados desde `data/transactions.json`.
 - Mastra Memory persiste historial conversacional por `resourceId` y `threadId` solamente. En desarrollo usa LibSQL local en `apps/ai/.mastra/memory.db`, que está ignorado por git.
-- Si el cliente no manda `threadId`, la API usa `demo-thread` solo por compatibilidad local/demo. En producción se debe enviar un thread real por usuario o sesión.
+- El camino principal de chat es `message + resourceId + threadId`: la UI manda solo el último mensaje y Mastra Memory recupera el contexto del thread.
+- `messages[]` sin `threadId` sigue soportado como modo legacy stateless; la API usa ese historial como contexto completo, limitado a los últimos 20 mensajes.
+- `messages[] + threadId` se acepta por compatibilidad, pero se normaliza al camino con memoria usando solo el último mensaje de usuario para evitar contexto duplicado. `message + messages[]` sigue siendo inválido.
+- Si el cliente manda `message` sin `threadId`, la API usa `demo-thread` solo por compatibilidad local/demo. En producción se debe enviar un thread real por usuario o sesión.
 - La memoria financiera es estructurada, determinística y respaldada por `data/financial-memory.json`; permite guardar hechos financieros explícitos del usuario demo, no guarda transacciones crudas, no usa RAG y no es Mastra Memory.
 - El motor financiero es determinístico: los totales, comparaciones, recurrencias y proyecciones se calculan con funciones y tools.
 - El agente usa Mastra tools para calcular y luego usa IA para interpretar la consulta y redactar la respuesta.

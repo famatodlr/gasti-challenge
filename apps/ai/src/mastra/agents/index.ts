@@ -33,6 +33,7 @@ export { getGastiModelFallbackChain, getGastiModelId, getGeminiApiKey } from './
 const GASTI_MODEL_RUNTIME_CONTEXT_KEY = 'gasti.modelId';
 
 type GenerateGastiFinanceAgentOptions = {
+  disableMemory?: boolean;
   maxSteps?: number;
   memory?: GastiConversationMemoryContext;
   modelId?: string;
@@ -137,15 +138,21 @@ export const gastiFinanceAgent = new Agent({
 
 export async function generateGastiFinanceAgent(
   messages: string | GastiFinanceAgentMessage[],
-  { maxSteps, memory, modelId, resourceId, threadId }: GenerateGastiFinanceAgentOptions = {},
+  { disableMemory, maxSteps, memory, modelId, resourceId, threadId }: GenerateGastiFinanceAgentOptions = {},
 ): Promise<GenerateGastiFinanceAgentResult> {
   const runtimeContext = new RuntimeContext();
   const trimmedModelId = modelId?.trim();
-  const memoryContext = memory ?? createGastiConversationMemoryContext({ resourceId, threadId });
+  const memoryContext = disableMemory
+    ? undefined
+    : (memory ?? createGastiConversationMemoryContext({ resourceId, threadId }));
 
   if (trimmedModelId) {
     runtimeContext.set(GASTI_MODEL_RUNTIME_CONTEXT_KEY, trimmedModelId);
   }
 
-  return await gastiFinanceAgent.generate(messages, { maxSteps, memory: memoryContext, runtimeContext });
+  return await gastiFinanceAgent.generate(messages, {
+    maxSteps,
+    ...(memoryContext ? { memory: memoryContext } : {}),
+    runtimeContext,
+  });
 }

@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
+import { buildChatRequestPayload } from './chat-request';
+
 type ChatRole = 'user' | 'assistant';
 
 type ChatMessage = {
@@ -22,7 +24,6 @@ const starterQuestions = [
   'Proyectá mi gasto de este mes',
 ];
 
-const DEMO_RESOURCE_ID = 'demo-user';
 const THREAD_STORAGE_KEY = 'gasti.threadId';
 const LOCAL_DEMO_DEFAULT_THREAD_ID = 'demo-thread';
 
@@ -123,11 +124,7 @@ export default function Page() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: trimmedContent,
-          resourceId: DEMO_RESOURCE_ID,
-          threadId: getActiveThreadId(),
-        }),
+        body: JSON.stringify(buildChatRequestPayload(trimmedContent, getActiveThreadId())),
       });
 
       const payload = (await response.json().catch(() => null)) as ChatResponse | null;

@@ -5,6 +5,9 @@ export type ChatMessage = {
   content: string;
 };
 
+export const MAX_CHAT_MESSAGE_CONTENT_LENGTH = 8000;
+export const MAX_LEGACY_STATELESS_MESSAGES = 20;
+
 export type ChatRequestBody = {
   message?: unknown;
   messages?: unknown;
@@ -19,4 +22,27 @@ export type ChatResponseBody = {
 export type ChatRequestContext = {
   resourceId?: string;
   threadId?: string;
+};
+
+export type ChatRequestMode = 'memory' | 'stateless';
+
+export type ChatRequestSource = 'message' | 'messages';
+
+export type ChatRequestMetadata = {
+  source: ChatRequestSource;
+  originalMessageCount: number;
+  normalizedMessageCount: number;
+  usesMemory: boolean;
+  mixedLegacyNormalized: boolean;
+  legacyContextCapped: boolean;
+  localDemoFallbackThread: boolean;
+  hasResourceId: boolean;
+  hasThreadId: boolean;
+};
+
+export type NormalizedChatRequest = {
+  mode: ChatRequestMode;
+  messages: ChatMessage[];
+  context: ChatRequestContext;
+  metadata: ChatRequestMetadata;
 };

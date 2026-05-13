@@ -133,6 +133,15 @@ The default `resourceId` is `demo-user`. If no `threadId` is provided, the backe
 
 Local development stores Mastra Memory in `apps/ai/.mastra/memory.db` with LibSQL. The path is resolved from the AI module location, not `process.cwd()`, so commands run from the repo root, `apps/api`, or `apps/ai` all use the same local DB.
 
+Chat request mode is explicit:
+
+- `message + resourceId + threadId` is the main UI path. The backend sends only that latest user message to the agent and passes Mastra Memory context.
+- `messages[]` without `threadId` is legacy stateless mode. The backend does not pass Mastra Memory and caps context to the final 20 messages.
+- `messages[] + threadId` is accepted for backwards compatibility, but normalized to memory mode using only the final validated user message. This avoids sending both retrieved Mastra Memory and full client history.
+- `message + messages[]` remains invalid.
+
+Mastra Memory itself is configured with `lastMessages: 20`, so retrieved thread context is bounded. This still consumes model tokens when memory mode is active, which is why the API avoids sending full client history on memory-backed requests.
+
 Mastra Memory is conversation history only. It should not store raw transaction rows, bank data, secrets, API keys, or structured financial facts.
 
 The agent now has deterministic editable financial memory in `data/financial-memory.json`, exposed through `getFinancialMemory` and updated only through `updateFinancialMemory`. This is app-owned structured context for the single demo resource `demo-user`, not a generic RAG layer and not Mastra-managed persistence.

@@ -23,7 +23,7 @@ Assumptions for the challenge build:
 - Mock transactions only.
 - Expense analysis only. Income can be provided by the user during chat, but it is not stored in the transaction dataset.
 - Spanish-first tone, with English responses when the user writes in English.
-- Structured financial memory can persist explicit user-stated facts for the demo user. Conversation threads are still stateless and Mastra Memory is not enabled.
+- Structured financial memory can persist explicit user-stated facts for the demo user. Mastra Memory is enabled separately for conversation continuity by `resourceId` and `threadId`.
 
 ## Product Principles
 
@@ -112,11 +112,11 @@ Expected answer:
 - Date, merchant, description, category, amount.
 - Sort order that matches the question.
 
-### 6. Lightweight Personalization (Future, Not Implemented)
+### 6. Lightweight Personalization
 
-Future versions could remember user preferences that affect later answers: preferred language, categories to watch, monthly income if the user volunteers it, and answer style.
+Gasti can remember explicit user-stated financial facts and preferences through the structured JSON-backed financial memory. Conversation continuity is handled separately by Mastra Memory threads.
 
-That future memory should not store raw transaction rows. Transaction truth should continue to come from tools reading the dataset.
+Neither memory layer should store raw transaction rows. Transaction truth should continue to come from tools reading the dataset.
 
 ## Non-Goals
 
