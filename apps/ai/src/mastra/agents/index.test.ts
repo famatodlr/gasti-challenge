@@ -56,9 +56,53 @@ test('Gasti agent instructions include the conversational formatting contract', 
   assert.match(GASTI_AGENT_INSTRUCTIONS, /short paragraphs/i);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /blank lines between sections/i);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /Markdown bullets using "- "/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Put a blank line before every Markdown bullet list/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Put each bullet on its own line/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Do not place bullets inline after a sentence/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Prefer bold labels inside bullets/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Put a blank line after every Markdown bullet list/i);
+  assert.match(
+    GASTI_AGENT_INSTRUCTIONS,
+    /Any time the answer contains two or more financial rows/i,
+  );
+  assert.match(
+    GASTI_AGENT_INSTRUCTIONS,
+    /categories, drivers, merchants, expenses, recurring payments, period totals, or breakdown items/i,
+  );
+  assert.match(
+    GASTI_AGENT_INSTRUCTIONS,
+    /Before sending the final answer, check for consecutive financial rows or lines starting with \*\*Label:\*\*/i,
+  );
+  assert.match(
+    GASTI_AGENT_INSTRUCTIONS,
+    /rewrite each one as a Markdown bullet starting with "- "/i,
+  );
+  assert.match(
+    GASTI_AGENT_INSTRUCTIONS,
+    /Never leave bare bold-label rows in the final answer/i,
+  );
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /A heading sentence before a list must be followed by a blank line/i);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /bold important months, periods, totals, and amounts/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /0-2 contextual emojis/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Short factual answers may use no emoji/i);
+  assert.match(
+    GASTI_AGENT_INSTRUCTIONS,
+    /Longer summaries, comparisons, projections, savings-goal answers, or insight-style responses may include 1-3 helpful emojis/i,
+  );
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Use emojis sparingly/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Do not put an emoji in every bullet if the list is long/i);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /not be one dense paragraph/i);
+});
+
+test('Gasti agent instructions include category emoji guidance', () => {
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Category emojis:/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Vivienda \/ alquiler: 🏠/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Salud \/ prepaga \/ farmacia: 🏥/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Supermercado: 🛒/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Compras: 🛍️/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Servicios \/ luz \/ gas \/ internet: 💡/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Ahorro \/ objetivo: 🎯/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Japón: 🇯🇵/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Proyección: 📈/);
 });
 
 test('Gasti agent instructions guide savings-goal answers', () => {
