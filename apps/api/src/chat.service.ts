@@ -6,13 +6,17 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   DEMO_RESOURCE_ID,
   LOCAL_DEMO_DEFAULT_THREAD_ID,
+  detectGastiWorkflowIntent,
   generateGastiFinanceAgent,
   getGastiModelFallbackChain,
+  runGreetingFinancialSnapshotWorkflow,
+  runMonthlyFinancialReviewWorkflow,
   streamGastiFinanceAgent,
 } from 'ai/mastra';
 
@@ -50,16 +54,38 @@ type AgentStreamResult = {
   fullStream: AsyncIterable<unknown>;
 };
 
+type WorkflowRunInput = {
+  message: string;
+  currentDate?: string;
+  modelId?: string;
+};
+
+type WorkflowRunResult = {
+  answer: string;
+  activityLabels: readonly string[];
+};
+
 export type FinanceAgent = {
   generate: (messages: ChatMessage[], options?: AgentGenerateOptions) => Promise<AgentGenerateResult>;
   stream: (messages: ChatMessage[], options?: AgentStreamOptions) => Promise<AgentStreamResult>;
 };
 
+export type FinanceWorkflowRunner = {
+  runMonthlyReview: (input: WorkflowRunInput) => Promise<WorkflowRunResult>;
+  runGreetingSnapshot: (input: WorkflowRunInput) => Promise<WorkflowRunResult>;
+};
+
 export const GASTI_FINANCE_AGENT = Symbol('GASTI_FINANCE_AGENT');
+export const GASTI_WORKFLOW_RUNNER = Symbol('GASTI_WORKFLOW_RUNNER');
 
 export const defaultFinanceAgent: FinanceAgent = {
   generate: (messages, options) => generateGastiFinanceAgent(messages, options),
   stream: (messages, options) => streamGastiFinanceAgent(messages, options),
+};
+
+export const defaultFinanceWorkflowRunner: FinanceWorkflowRunner = {
+  runMonthlyReview: (input) => runMonthlyFinancialReviewWorkflow(input),
+  runGreetingSnapshot: (input) => runGreetingFinancialSnapshotWorkflow(input),
 };
 
 type SerializedAgentError = {
@@ -653,7 +679,12 @@ function buildChatRequestLogMetadata(request: NormalizedChatRequest): ChatReques
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
-  constructor(@Inject(GASTI_FINANCE_AGENT) private readonly agent: FinanceAgent = defaultFinanceAgent) {}
+  constructor(
+    @Inject(GASTI_FINANCE_AGENT) private readonly agent: FinanceAgent = defaultFinanceAgent,
+    @Optional()
+    @Inject(GASTI_WORKFLOW_RUNNER)
+    private readonly workflowRunner: FinanceWorkflowRunner = defaultFinanceWorkflowRunner,
+  ) {}
 
   async answer(request: NormalizedChatRequest): Promise<string> {
     return (await this.answerWithSteps(request)).answer;
@@ -670,6 +701,7 @@ export class ChatService {
     activity.addStatus(ACTIVITY_ANALYZING_LABEL);
     const memory = request.mode === 'memory' ? createAgentMemoryContext(request.context) : undefined;
     const requestMetadata = buildChatRequestLogMetadata(request);
+    const workflowIntent = this.detectWorkflowIntent(lastMessage);
 
     this.logger.log({
       event: 'chat.request_received',
@@ -683,6 +715,18 @@ export class ChatService {
     });
 
     try {
+      if (workflowIntent !== 'agent') {
+        const workflowResult = await this.runWorkflow(workflowIntent, lastMessage?.content ?? '');
+
+        for (const label of workflowResult.activityLabels) {
+          activity.addStatus(label);
+        }
+
+        activity.addFinalAnswer(workflowResult.answer);
+
+        return { answer: workflowResult.answer, steps: activity.collectedEvents };
+      }
+
       const answer = await this.generateAnswerWithModelFallback(
         messages,
         1,
@@ -750,6 +794,7 @@ export class ChatService {
     const lastMessage = messages.at(-1);
     const memory = request.mode === 'memory' ? createAgentMemoryContext(request.context) : undefined;
     const requestMetadata = buildChatRequestLogMetadata(request);
+    const workflowIntent = this.detectWorkflowIntent(lastMessage);
 
     this.logger.log({
       event: 'chat.request_received',
@@ -765,6 +810,17 @@ export class ChatService {
     yield createActivityEvent('status', ACTIVITY_ANALYZING_LABEL);
 
     try {
+      if (workflowIntent !== 'agent') {
+        const workflowResult = await this.runWorkflow(workflowIntent, lastMessage?.content ?? '');
+
+        for (const label of workflowResult.activityLabels) {
+          yield createActivityEvent('status', label);
+        }
+
+        yield createActivityEvent('final_answer', ACTIVITY_FINAL_ANSWER_LABEL, { answer: workflowResult.answer });
+        return;
+      }
+
       yield* this.streamAnswerWithInvalidToolRetry(messages, memory, request.mode, requestMetadata);
     } catch (error) {
       if (error instanceof GastiModelFallbackExhaustedError || isProviderQuotaError(error)) {
@@ -789,6 +845,28 @@ export class ChatService {
 
       yield createActivityEvent('error', getPublicStreamErrorLabel(error));
     }
+  }
+
+  private detectWorkflowIntent(lastMessage: ChatMessage | undefined): ReturnType<typeof detectGastiWorkflowIntent> {
+    if (!lastMessage || lastMessage.role !== 'user') {
+      return 'agent';
+    }
+
+    return detectGastiWorkflowIntent(lastMessage.content);
+  }
+
+  private async runWorkflow(
+    intent: Exclude<ReturnType<typeof detectGastiWorkflowIntent>, 'agent'>,
+    message: string,
+  ): Promise<WorkflowRunResult> {
+    const modelId = getGastiModelFallbackChain()[0];
+    const input = { message, ...(modelId ? { modelId } : {}) };
+
+    if (intent === 'monthly_review') {
+      return await this.workflowRunner.runMonthlyReview(input);
+    }
+
+    return await this.workflowRunner.runGreetingSnapshot(input);
   }
 
   private async generateAnswerWithModelFallback(

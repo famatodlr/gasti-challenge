@@ -148,6 +148,7 @@ test('getFinancialMemoryTool exposes structured user context without raw transac
   assert.deepEqual(parsedFinancialMemory.savingGoals, [
     {
       name: 'Viaje a Japón',
+      targetAmount: 1000000,
       currency: 'ARS',
       targetDate: '2025-01-01',
       source: 'user_stated',

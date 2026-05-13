@@ -167,15 +167,13 @@ The sanitizer preserves visible user and assistant text, removes tool invocation
 
 This sanitizer is a guardrail for the current Mastra integration, not a replacement for tool schema discipline. Finance tools should still avoid returning data that belongs in conversation memory, and semantic recall/RAG remains future work.
 
-## Workflow Strategy
+## Mastra Workflows
 
-Do not introduce a Mastra Workflow for the base chat path. A single agent with well-defined tools is enough and keeps scope shippable.
+Gasti now registers two Mastra workflows alongside `gastiFinanceAgent`:
 
-A workflow only makes sense as an optional enhancement: `monthlyReviewWorkflow`, exposed to the agent as a workflow tool, that runs a deterministic sequence:
+- `monthlyFinancialReviewWorkflow` handles clear monthly summary or review requests, such as "Resumen de mayo 2026" or "Cómo me fue este mes?".
+- `greetingFinancialSnapshotWorkflow` handles simple opening greetings, such as "Hola" or "Buen día", and returns a short month-to-date snapshot when there is enough data.
 
-1. Summarize month-to-date spending.
-2. Compare against previous month.
-3. Detect recurring expenses.
-4. Produce a short review with one suggested action.
+The API routes conservatively. Monthly review wording goes to the monthly workflow, plain greetings go to the greeting workflow, and normal finance questions stay on the general agent. A message like "Hola, comparame abril contra mayo" remains an agent request because it contains a real finance question.
 
-This is useful because monthly review is repeatable and auditable. It should not replace normal conversational tool use.
+Workflow steps are explicit orchestration layers: resolve time context, load mock transactions, calculate deterministic KPIs, compare against the previous comparable period, detect insights, build a structured object, and then write the final Spanish answer. Totals, category rollups, merchant rankings, recurring-payment detection, and projections remain in the deterministic domain/tool logic. The final agent step mainly turns the structured intermediate result into friendly Markdown, rather than recalculating finance data.

@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BadRequestException } from '@nestjs/common';
