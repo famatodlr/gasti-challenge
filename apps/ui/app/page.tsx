@@ -10,6 +10,7 @@ import {
   type ActivityEvent,
   type ActivityFeedStatus,
 } from '@/lib/activity';
+import { AssistantMarkdown, PlainChatText } from '@/lib/assistant-markdown';
 import { buildChatRequestPayload } from './chat-request';
 
 type ChatRole = 'user' | 'assistant';
@@ -376,13 +377,17 @@ export default function Page() {
                   return (
                     <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                       <div
-                        className={`max-w-[90%] whitespace-pre-wrap break-words rounded-lg px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[74%] ${
+                        className={`max-w-[90%] break-words rounded-lg px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[74%] ${
                           isUser
-                            ? 'rounded-br-sm border border-[#9bdc4f]/25 bg-[#1d3216] text-[#f6ffe8]'
+                            ? 'whitespace-pre-wrap rounded-br-sm border border-[#9bdc4f]/25 bg-[#1d3216] text-[#f6ffe8]'
                             : 'rounded-bl-sm border border-[#252e28] bg-[#111713] text-[#dde5df]'
                         }`}
                       >
-                        {message.content}
+                        {isUser ? (
+                          <PlainChatText content={message.content} />
+                        ) : (
+                          <AssistantMarkdown content={message.content} />
+                        )}
                       </div>
                     </div>
                   );

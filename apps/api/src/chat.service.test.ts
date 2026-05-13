@@ -962,6 +962,12 @@ test('ChatService retries invalid tool argument failures once with memory contex
     assert.match(retryMessage?.content ?? '', /Do not use nested dateRange/);
     assert.match(retryMessage?.content ?? '', /from1/);
     assert.match(retryMessage?.content ?? '', /YYYY-MM-DD/);
+    assert.match(retryMessage?.content ?? '', /same language the user used/i);
+    assert.match(retryMessage?.content ?? '', /Gasti formatting contract/i);
+    assert.match(retryMessage?.content ?? '', /concise, structured Markdown/i);
+    assert.match(retryMessage?.content ?? '', /real Markdown bullets using "- "/i);
+    assert.match(retryMessage?.content ?? '', /blank lines between sections/i);
+    assert.match(retryMessage?.content ?? '', /one specific follow-up/i);
 
     assert.equal(loggedWarnings.length, 1);
     assert.equal((loggedWarnings[0][0] as { event: string }).event, 'chat.agent_generation_retrying');
@@ -1020,6 +1026,9 @@ test('ChatService retries invalid tool argument failures in stateless mode witho
     assert.deepEqual(calls[0].messages, messages);
     assert.deepEqual(calls[1].messages.slice(0, -1), messages);
     assert.match(calls[1].messages.at(-1)?.content ?? '', /exact tool input schema/);
+    assert.match(calls[1].messages.at(-1)?.content ?? '', /same language the user used/i);
+    assert.match(calls[1].messages.at(-1)?.content ?? '', /Gasti formatting contract/i);
+    assert.match(calls[1].messages.at(-1)?.content ?? '', /concise, structured Markdown/i);
   } finally {
     Logger.prototype.warn = originalLoggerWarn;
     Logger.prototype.error = originalLoggerError;

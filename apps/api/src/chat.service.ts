@@ -621,7 +621,16 @@ For compare tools, use currentFrom, currentTo, baselineFrom, and baselineTo exac
 Do not use nested dateRange unless the tool schema explicitly requires it.
 Do not use fields such as from1, start, end, date_from, or date_to.
 Use ISO dates in YYYY-MM-DD format.
-After the tool succeeds, return the final user-facing answer in Spanish.`,
+After the tool succeeds, return the final user-facing answer in the same language the user used.
+
+Preserve the Gasti formatting contract:
+- Return concise, structured Markdown.
+- Use short paragraphs with blank lines between sections.
+- Use real Markdown bullets using "- " for lists.
+- Bold important months, periods, totals, and amounts with **text**.
+- Avoid excessive percentage precision.
+- Ask one specific follow-up only when it advances the analysis.
+- Do not return one dense paragraph.`,
     },
   ];
 }
