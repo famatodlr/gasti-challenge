@@ -8,7 +8,7 @@ import {
   isRecord,
   jsonError,
   normalizeActivityEvents,
-  normalizeMessages,
+  normalizeChatPayload,
 } from './shared';
 
 export async function POST(request: Request) {
@@ -20,9 +20,9 @@ export async function POST(request: Request) {
     return jsonError(INVALID_INPUT_ERROR, 400);
   }
 
-  const messages = normalizeMessages(body);
+  const payload = normalizeChatPayload(body);
 
-  if (!messages) {
+  if (!payload) {
     return jsonError(INVALID_INPUT_ERROR, 400);
   }
 
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const backendResponse = await fetch(getBackendChatUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify(payload),
     });
 
     const backendBody = await backendResponse.json().catch(() => null);

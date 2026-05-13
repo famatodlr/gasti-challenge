@@ -20,6 +20,7 @@ test('loads the normalized transaction dataset in ascending calculation order', 
     [
       'comida_fuera',
       'compras',
+      'delivery',
       'educacion',
       'ocio',
       'salud',
@@ -63,8 +64,9 @@ test('summarizes May spending with category groups and top transactions', () => 
       { key: 'supermercado', total: 38500, count: 1 },
       { key: 'transporte', total: 29300, count: 4 },
       { key: 'servicios', total: 28500, count: 1 },
-      { key: 'comida_fuera', total: 15500, count: 3 },
+      { key: 'delivery', total: 11300, count: 2 },
       { key: 'suscripciones', total: 8998, count: 2 },
+      { key: 'comida_fuera', total: 4200, count: 1 },
     ],
   );
   assert.equal(summary.topTransactions[0]?.id, 'txn_014');

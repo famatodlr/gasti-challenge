@@ -52,6 +52,7 @@ type NormalizedTransaction = Omit<Transaction, "category"> & {
     | "suscripciones"
     | "supermercado"
     | "comida_fuera"
+    | "delivery"
     | "transporte"
     | "salud"
     | "educacion"
@@ -83,14 +84,15 @@ Current normalized distribution:
 | `servicios` | 9 | Electricity, gas, water, internet, phone, bank service fee |
 | `suscripciones` | 5 | Netflix, Spotify, Disney+, app subscriptions |
 | `supermercado` | 4 | Larger grocery trips |
-| `comida_fuera` | 9 | Delivery, cafes, lunches, restaurants |
+| `comida_fuera` | 4 | Cafes, lunches, restaurants |
+| `delivery` | 5 | Rappi and PedidosYa delivery |
 | `transporte` | 8 | SUBE, Uber, Cabify, fuel |
 | `salud` | 5 | Pharmacy, gym, health plan |
 | `educacion` | 3 | Courses and books |
 | `compras` | 3 | Mercado Libre and electronics |
 | `ocio` | 2 | Cinema or one-off leisure outside subscriptions |
 
-The normalization is intentionally small and deterministic. It is based on merchant/intent hints such as `Propietario` to `vivienda`, subscription merchants to `suscripciones`, supermarkets to `supermercado`, delivery/cafes/restaurants to `comida_fuera`, and `Mercado Libre` to `compras`.
+The normalization is intentionally small and deterministic. It is based on merchant/intent hints such as `Propietario` to `vivienda`, subscription merchants to `suscripciones`, supermarkets to `supermercado`, Rappi and PedidosYa to `delivery`, cafes/restaurants to `comida_fuera`, and `Mercado Libre` to `compras`.
 
 ## Realistic Merchant Set
 

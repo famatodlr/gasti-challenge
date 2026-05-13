@@ -3,10 +3,15 @@ import assert from 'node:assert/strict';
 import { BadRequestException } from '@nestjs/common';
 
 import { ChatController } from './chat.controller.ts';
+import {
+  MAX_CHAT_MESSAGE_CONTENT_LENGTH,
+  MAX_LEGACY_STATELESS_MESSAGES,
+  type NormalizedChatRequest,
+} from './chat.types.ts';
 
-type TestChatMessage = {
-  role: 'user' | 'assistant';
-  content: string;
+const testChatResponse = {
+  answer: 'Respuesta de prueba.',
+  steps: [{ type: 'status' as const, label: 'Analizando consulta', timestamp: '2026-05-12T00:00:00.000Z' }],
 };
 
 async function* streamEvents() {
@@ -20,29 +25,29 @@ async function* streamEvents() {
 }
 
 function createControllerWithCapture() {
-  let capturedMessages: TestChatMessage[] | undefined;
+  let capturedRequest: NormalizedChatRequest | undefined;
 
   const controller = new ChatController({
-    answer: async (messages: TestChatMessage[]) => {
-      capturedMessages = messages;
+    answer: async (request: NormalizedChatRequest) => {
+      capturedRequest = request;
       return 'Respuesta de prueba.';
     },
-    answerWithSteps: async (messages: TestChatMessage[]) => {
-      capturedMessages = messages;
-      return {
-        answer: 'Respuesta de prueba.',
-        steps: [{ type: 'status', label: 'Analizando consulta', timestamp: '2026-05-12T00:00:00.000Z' }],
-      };
+    answerWithSteps: async (request: NormalizedChatRequest) => {
+      capturedRequest = request;
+      return testChatResponse;
     },
-    streamAnswerEvents: (messages: TestChatMessage[]) => {
-      capturedMessages = messages;
+    streamAnswerEvents: (request: NormalizedChatRequest) => {
+      capturedRequest = request;
       return streamEvents();
     },
   });
 
   return {
     controller,
-    getCapturedMessages: () => capturedMessages,
+    getCapturedRequest: () => {
+      assert.ok(capturedRequest);
+      return capturedRequest;
+    },
   };
 }
 
@@ -51,53 +56,149 @@ test('ChatController rejects a missing chat body', async () => {
     answer: async () => {
       throw new Error('service should not be called');
     },
+    answerWithSteps: async () => {
+      throw new Error('service should not be called');
+    },
+    streamAnswerEvents: () => {
+      throw new Error('service should not be called');
+    },
   });
 
   await assert.rejects(() => controller.chat({}), BadRequestException);
 });
 
-test('ChatController accepts a single user message conversation', async () => {
-  const { controller, getCapturedMessages } = createControllerWithCapture();
+test('ChatController normalizes messages arrays without threadId as stateless legacy mode', async () => {
+  const { controller, getCapturedRequest } = createControllerWithCapture();
 
   assert.deepEqual(
     await controller.chat({
       messages: [{ role: 'user', content: '  Cuanto gaste en mayo?  ' }],
     }),
-    {
-      answer: 'Respuesta de prueba.',
-      steps: [{ type: 'status', label: 'Analizando consulta', timestamp: '2026-05-12T00:00:00.000Z' }],
-    },
+    testChatResponse,
   );
-  assert.deepEqual(getCapturedMessages(), [{ role: 'user', content: 'Cuanto gaste en mayo?' }]);
+
+  const request = getCapturedRequest();
+  assert.equal(request.mode, 'stateless');
+  assert.deepEqual(request.messages, [{ role: 'user', content: 'Cuanto gaste en mayo?' }]);
+  assert.deepEqual(request.context, {});
+  assert.equal(request.metadata.usesMemory, false);
+  assert.equal(request.metadata.source, 'messages');
+  assert.equal(request.metadata.originalMessageCount, 1);
+  assert.equal(request.metadata.normalizedMessageCount, 1);
 });
 
-test('ChatController passes multi-turn history to the service', async () => {
-  const { controller, getCapturedMessages } = createControllerWithCapture();
+test('ChatController passes legacy stateless multi-turn history to the service', async () => {
+  const { controller, getCapturedRequest } = createControllerWithCapture();
   const messages = [
     { role: 'user', content: 'Comparame mayo contra abril.' },
     { role: 'assistant', content: 'En mayo gastaste menos que en abril.' },
     { role: 'user', content: 'Que categoria aumento mas?' },
   ];
 
-  assert.deepEqual(await controller.chat({ messages }), {
-    answer: 'Respuesta de prueba.',
-    steps: [{ type: 'status', label: 'Analizando consulta', timestamp: '2026-05-12T00:00:00.000Z' }],
-  });
-  assert.deepEqual(getCapturedMessages(), messages);
+  assert.deepEqual(await controller.chat({ messages }), testChatResponse);
+
+  const request = getCapturedRequest();
+  assert.equal(request.mode, 'stateless');
+  assert.deepEqual(request.messages, messages);
+  assert.equal(request.metadata.legacyContextCapped, false);
 });
 
-test('ChatController keeps legacy message compatibility', async () => {
-  const { controller, getCapturedMessages } = createControllerWithCapture();
+test('ChatController caps legacy stateless messages arrays to the final 20 messages', async () => {
+  const { controller, getCapturedRequest } = createControllerWithCapture();
+  const messages = Array.from({ length: MAX_LEGACY_STATELESS_MESSAGES + 5 }, (_value, index) => ({
+    role: 'user' as const,
+    content: `Pregunta ${index}`,
+  }));
+
+  assert.deepEqual(await controller.chat({ messages }), testChatResponse);
+
+  const request = getCapturedRequest();
+  assert.equal(request.mode, 'stateless');
+  assert.equal(request.messages.length, MAX_LEGACY_STATELESS_MESSAGES);
+  assert.equal(request.messages[0].content, 'Pregunta 5');
+  assert.equal(request.messages.at(-1)?.content, 'Pregunta 24');
+  assert.equal(request.metadata.originalMessageCount, MAX_LEGACY_STATELESS_MESSAGES + 5);
+  assert.equal(request.metadata.normalizedMessageCount, MAX_LEGACY_STATELESS_MESSAGES);
+  assert.equal(request.metadata.legacyContextCapped, true);
+});
+
+test('ChatController keeps legacy message compatibility as demo memory mode', async () => {
+  const { controller, getCapturedRequest } = createControllerWithCapture();
 
   assert.deepEqual(await controller.chat({ message: 'Cuanto gaste en supermercado en mayo?' }), {
     answer: 'Respuesta de prueba.',
     steps: [{ type: 'status', label: 'Analizando consulta', timestamp: '2026-05-12T00:00:00.000Z' }],
   });
-  assert.deepEqual(getCapturedMessages(), [{ role: 'user', content: 'Cuanto gaste en supermercado en mayo?' }]);
+
+  const request = getCapturedRequest();
+  assert.equal(request.mode, 'memory');
+  assert.deepEqual(request.messages, [{ role: 'user', content: 'Cuanto gaste en supermercado en mayo?' }]);
+  assert.deepEqual(request.context, {});
+  assert.equal(request.metadata.usesMemory, true);
+  assert.equal(request.metadata.localDemoFallbackThread, true);
+});
+
+test('ChatController accepts resourceId and threadId with single message bodies', async () => {
+  const { controller, getCapturedRequest } = createControllerWithCapture();
+
+  assert.deepEqual(
+    await controller.chat({
+      message: 'Qué veníamos hablando?',
+      resourceId: ' demo-user ',
+      threadId: ' thread-mayo ',
+    }),
+    testChatResponse,
+  );
+
+  const request = getCapturedRequest();
+  assert.equal(request.mode, 'memory');
+  assert.deepEqual(request.messages, [{ role: 'user', content: 'Qué veníamos hablando?' }]);
+  assert.deepEqual(request.context, { resourceId: 'demo-user', threadId: 'thread-mayo' });
+  assert.equal(request.metadata.localDemoFallbackThread, false);
+  assert.equal(request.metadata.hasResourceId, true);
+  assert.equal(request.metadata.hasThreadId, true);
+});
+
+test('ChatController normalizes messages arrays with threadId to memory mode using only the final user message', async () => {
+  const { controller, getCapturedRequest } = createControllerWithCapture();
+
+  assert.deepEqual(
+    await controller.chat({
+      messages: [
+        { role: 'user', content: 'Comparame mayo contra abril.' },
+        { role: 'assistant', content: 'En mayo gastaste menos.' },
+        { role: 'user', content: 'Qué veníamos hablando?' },
+      ],
+      resourceId: 'demo-user',
+      threadId: 'thread-local',
+    }),
+    testChatResponse,
+  );
+
+  const request = getCapturedRequest();
+  assert.equal(request.mode, 'memory');
+  assert.deepEqual(request.messages, [{ role: 'user', content: 'Qué veníamos hablando?' }]);
+  assert.deepEqual(request.context, { resourceId: 'demo-user', threadId: 'thread-local' });
+  assert.equal(request.metadata.mixedLegacyNormalized, true);
+  assert.equal(request.metadata.originalMessageCount, 3);
+  assert.equal(request.metadata.normalizedMessageCount, 1);
+});
+
+test('ChatController rejects blank resourceId and threadId values', async () => {
+  const { controller } = createControllerWithCapture();
+
+  await assert.rejects(
+    () => controller.chat({ message: 'Cuanto gaste?', resourceId: '   ' }),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => controller.chat({ message: 'Cuanto gaste?', threadId: '   ' }),
+    BadRequestException,
+  );
 });
 
 test('ChatController streams chat activity events as SSE data frames', async () => {
-  const { controller, getCapturedMessages } = createControllerWithCapture();
+  const { controller, getCapturedRequest } = createControllerWithCapture();
   const headers: Record<string, string> = {};
   const chunks: string[] = [];
   let ended = false;
@@ -121,7 +222,7 @@ test('ChatController streams chat activity events as SSE data frames', async () 
   assert.equal(headers['Content-Type'], 'text/event-stream; charset=utf-8');
   assert.equal(headers['Cache-Control'], 'no-cache, no-transform');
   assert.equal(ended, true);
-  assert.deepEqual(getCapturedMessages(), [{ role: 'user', content: 'Cuanto gaste?' }]);
+  assert.deepEqual(getCapturedRequest().messages, [{ role: 'user', content: 'Cuanto gaste?' }]);
   assert.equal(chunks.length, 2);
   assert.match(chunks[0], /^data: /);
   assert.match(chunks[0], /"label":"Analizando consulta"/);
@@ -160,6 +261,7 @@ test('ChatController rejects conversations whose last message is not from the us
           { role: 'user', content: 'Comparame mayo contra abril.' },
           { role: 'assistant', content: 'En mayo gastaste menos que en abril.' },
         ],
+        threadId: 'thread-mayo',
       }),
     BadRequestException,
   );
@@ -174,6 +276,17 @@ test('ChatController rejects bodies with both message and messages', async () =>
         message: 'Cuanto gaste?',
         messages: [{ role: 'user', content: 'Cuanto gaste?' }],
       }),
+    BadRequestException,
+  );
+});
+
+test('ChatController applies content length caps to message and messages content', async () => {
+  const { controller } = createControllerWithCapture();
+  const tooLongContent = 'x'.repeat(MAX_CHAT_MESSAGE_CONTENT_LENGTH + 1);
+
+  await assert.rejects(() => controller.chat({ message: tooLongContent }), BadRequestException);
+  await assert.rejects(
+    () => controller.chat({ messages: [{ role: 'user', content: tooLongContent }] }),
     BadRequestException,
   );
 });

@@ -7,7 +7,9 @@ import {
   findTransactionsTool,
   forecastMonthEndSpendTool,
   getFinanceContextTool,
+  getFinancialMemoryTool,
   spendingSummaryTool,
+  updateFinancialMemoryTool,
 } from './index.ts';
 
 async function executeTool<TInput>(tool: { execute: (input: any) => Promise<unknown> }, context: TInput): Promise<unknown> {
@@ -28,7 +30,17 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedSpendingSummary.groups[0]?.key, 'vivienda');
   assert.deepEqual(
     parsedSpendingSummary.groups.map((group) => group.key),
-    ['vivienda', 'salud', 'compras', 'supermercado', 'transporte', 'servicios', 'comida_fuera', 'suscripciones'],
+    [
+      'vivienda',
+      'salud',
+      'compras',
+      'supermercado',
+      'transporte',
+      'servicios',
+      'delivery',
+      'suscripciones',
+      'comida_fuera',
+    ],
   );
 
   const foundTransactions = await executeTool(findTransactionsTool, {
@@ -114,6 +126,71 @@ test('getFinanceContextTool exposes dataset metadata without raw transactions', 
     ],
   );
   assert.equal(JSON.stringify(parsedFinanceContext).includes('txn_'), false);
+});
+
+test('getFinancialMemoryTool exposes structured user context without raw transactions', async () => {
+  const financialMemory = await executeTool(getFinancialMemoryTool, {});
+  const parsedFinancialMemory = getFinancialMemoryTool.outputSchema.parse(financialMemory);
+
+  assert.equal(parsedFinancialMemory.schemaVersion, 1);
+  assert.equal(parsedFinancialMemory.resourceId, 'demo-user');
+  assert.equal(parsedFinancialMemory.currency, 'ARS');
+  assert.deepEqual(parsedFinancialMemory.knownIncome, [
+    {
+      label: 'Ingreso mensual',
+      amount: 1500000,
+      currency: 'ARS',
+      cadence: 'monthly',
+      source: 'user_stated',
+    },
+  ]);
+  assert.deepEqual(parsedFinancialMemory.fixedExpenses, []);
+  assert.deepEqual(parsedFinancialMemory.savingGoals, [
+    {
+      name: 'Viaje a Japón',
+      currency: 'ARS',
+      targetDate: '2025-01-01',
+      source: 'user_stated',
+    },
+  ]);
+  assert.deepEqual(parsedFinancialMemory.watchCategories, ['delivery']);
+  assert.deepEqual(parsedFinancialMemory.recurringObservations, []);
+  assert.deepEqual(parsedFinancialMemory.preferences, {
+    preferredLanguage: 'es-AR',
+    answerStyle: 'concise',
+    includeEvidence: true,
+  });
+  assert.equal(JSON.stringify(parsedFinancialMemory).includes('txn_'), false);
+  assert.equal(JSON.stringify(parsedFinancialMemory).includes('transactions'), false);
+});
+
+test('updateFinancialMemoryTool exposes a strict structured patch schema', () => {
+  assert.equal(updateFinancialMemoryTool.id, 'updateFinancialMemory');
+  assert.doesNotThrow(() =>
+    updateFinancialMemoryTool.inputSchema.parse({
+      knownIncome: [
+        {
+          amount: 1500000,
+          currency: 'ARS',
+          cadence: 'monthly',
+          source: 'user_stated',
+        },
+      ],
+      savingGoals: [
+        {
+          name: 'Viaje a Japon',
+          currency: 'ARS',
+          source: 'user_stated',
+        },
+      ],
+      watchCategories: ['delivery'],
+    }),
+  );
+  assert.throws(() =>
+    updateFinancialMemoryTool.inputSchema.parse({
+      transactions: [{ id: 'txn_001', amount: 4500 }],
+    }),
+  );
 });
 
 test('April questions can resolve to the dataset year from finance context', async () => {

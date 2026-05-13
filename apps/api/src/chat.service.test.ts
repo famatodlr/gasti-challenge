@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 
 import { ChatService } from './chat.service.ts';
+import type { ChatRequestContext, NormalizedChatRequest } from './chat.types.ts';
 
 const PROVIDER_QUOTA_MESSAGE = 'The AI provider quota was exceeded. Please try again later.';
 const EMPTY_ANSWER_MESSAGE = 'The AI provider returned an empty answer. Please try again.';
@@ -21,8 +22,13 @@ type TestChatMessage = {
 };
 type CapturedGenerateCall = {
   messages: TestChatMessage[];
+  disableMemory?: boolean;
   modelId?: string;
   maxSteps?: number;
+  memory?: {
+    resource: string;
+    thread: { id: string };
+  };
 };
 type TestStreamChunk = Record<string, unknown>;
 
@@ -50,6 +56,61 @@ async function* streamChunks(chunks: readonly TestStreamChunk[]): AsyncGenerator
   for (const chunk of chunks) {
     yield chunk;
   }
+}
+
+function chatRequest(
+  messages: readonly TestChatMessage[],
+  {
+    context = {},
+    metadata = {},
+    mode = 'memory',
+    source = 'message',
+  }: {
+    context?: ChatRequestContext;
+    metadata?: Partial<NormalizedChatRequest['metadata']>;
+    mode?: NormalizedChatRequest['mode'];
+    source?: NormalizedChatRequest['metadata']['source'];
+  } = {},
+): NormalizedChatRequest {
+  const normalizedMessages = copyMessages(messages);
+  const hasThreadId = Boolean(context.threadId?.trim());
+
+  return {
+    mode,
+    messages: normalizedMessages,
+    context,
+    metadata: {
+      source,
+      originalMessageCount: normalizedMessages.length,
+      normalizedMessageCount: normalizedMessages.length,
+      usesMemory: mode === 'memory',
+      mixedLegacyNormalized: false,
+      legacyContextCapped: false,
+      localDemoFallbackThread: mode === 'memory' && !hasThreadId,
+      hasResourceId: Boolean(context.resourceId?.trim()),
+      hasThreadId,
+      ...metadata,
+    },
+  };
+}
+
+function memoryChatRequest(
+  messages: readonly TestChatMessage[],
+  context: ChatRequestContext = {},
+  metadata: Partial<NormalizedChatRequest['metadata']> = {},
+): NormalizedChatRequest {
+  return chatRequest(messages, { context, metadata, mode: 'memory' });
+}
+
+function statelessChatRequest(
+  messages: readonly TestChatMessage[],
+  metadata: Partial<NormalizedChatRequest['metadata']> = {},
+): NormalizedChatRequest {
+  return chatRequest(messages, {
+    metadata: { source: 'messages', usesMemory: false, localDemoFallbackThread: false, ...metadata },
+    mode: 'stateless',
+    source: 'messages',
+  });
 }
 
 function restoreAiEnv(snapshot: Record<AiEnvKey, string | undefined>): void {
@@ -114,7 +175,7 @@ function assertProviderQuotaException(error: unknown): boolean {
   return true;
 }
 
-test('ChatService invokes the finance agent with the full message history', async () => {
+test('ChatService invokes the finance agent with full history in stateless legacy mode', async () => {
   const restoreEnv = useTestAiEnv();
   const restoreLoggerLog = silenceInfoLogs();
   const messages = comparisonFollowUpConversation();
@@ -125,12 +186,67 @@ test('ChatService invokes the finance agent with the full message history', asyn
         assert.deepEqual(receivedMessages, messages);
         assert.equal(options?.maxSteps, 5);
         assert.equal(options?.modelId, 'gemini-2.5-flash');
+        assert.equal(options?.memory, undefined);
+        assert.equal(options?.disableMemory, true);
 
         return { text: 'Salud fue la categoria que mas aumento.' };
       },
     });
 
-    assert.equal(await service.answer(messages), 'Salud fue la categoria que mas aumento.');
+    assert.equal(await service.answer(statelessChatRequest(messages)), 'Salud fue la categoria que mas aumento.');
+  } finally {
+    restoreEnv();
+    restoreLoggerLog();
+  }
+});
+
+test('ChatService passes resourceId and threadId as Mastra memory context', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+  const messages = userConversation('Qué veníamos hablando?');
+
+  try {
+    const service = new ChatService({
+      generate: async (receivedMessages, options) => {
+        assert.deepEqual(receivedMessages, messages);
+        assert.equal(options?.maxSteps, 5);
+        assert.equal(options?.modelId, 'gemini-2.5-flash');
+        assert.deepEqual(options?.memory, {
+          resource: 'demo-user',
+          thread: { id: 'thread-mayo' },
+        });
+
+        return { text: 'Venías evaluando tus gastos de mayo.' };
+      },
+    });
+
+    assert.equal(
+      await service.answer(memoryChatRequest(messages, { resourceId: 'demo-user', threadId: 'thread-mayo' })),
+      'Venías evaluando tus gastos de mayo.',
+    );
+  } finally {
+    restoreEnv();
+    restoreLoggerLog();
+  }
+});
+
+test('ChatService uses the local demo fallback memory thread when no threadId is provided', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService({
+      generate: async (_receivedMessages, options) => {
+        assert.deepEqual(options?.memory, {
+          resource: 'demo-user',
+          thread: { id: 'demo-thread' },
+        });
+
+        return { text: 'Respuesta con thread demo.' };
+      },
+    });
+
+    assert.equal(await service.answer(memoryChatRequest(userConversation('Hola'))), 'Respuesta con thread demo.');
   } finally {
     restoreEnv();
     restoreLoggerLog();
@@ -158,6 +274,8 @@ test('ChatService falls back to the next model with the same message history on 
           messages: copyMessages(receivedMessages),
           modelId: options?.modelId,
           maxSteps: options?.maxSteps,
+          disableMemory: options?.disableMemory,
+          memory: options?.memory,
         });
 
         if (options?.modelId === 'gemini-primary') {
@@ -168,19 +286,75 @@ test('ChatService falls back to the next model with the same message history on 
       },
     });
 
-    assert.equal(await service.answer(messages), 'Respuesta desde fallback.');
+    assert.equal(
+      await service.answer(memoryChatRequest(messages, { resourceId: 'demo-user', threadId: 'fallback-thread' })),
+      'Respuesta desde fallback.',
+    );
     assert.deepEqual(
       calls.map((call) => call.modelId),
       ['gemini-primary', 'gemini-secondary'],
     );
     assert.deepEqual(calls.map((call) => call.maxSteps), [5, 5]);
+    assert.deepEqual(calls.map((call) => call.disableMemory), [undefined, undefined]);
     assert.deepEqual(calls.map((call) => call.messages), [messages, messages]);
+    assert.deepEqual(
+      calls.map((call) => call.memory),
+      [
+        { resource: 'demo-user', thread: { id: 'fallback-thread' } },
+        { resource: 'demo-user', thread: { id: 'fallback-thread' } },
+      ],
+    );
     assert.deepEqual(
       loggedWarnings.map(([payload]) => (payload as { event: string }).event),
       ['chat.model_fallback_retrying'],
     );
     assert.equal((loggedWarnings[0][0] as { modelId: string }).modelId, 'gemini-primary');
     assert.equal((loggedWarnings[0][0] as { nextModelId: string }).nextModelId, 'gemini-secondary');
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService preserves stateless mode across provider fallback', async () => {
+  const restoreEnv = useTestAiEnv({
+    GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-primary,gemini-secondary',
+  });
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  Logger.prototype.warn = function () {};
+  const messages = comparisonFollowUpConversation();
+
+  try {
+    const calls: CapturedGenerateCall[] = [];
+    const quotaError = new Error('RESOURCE_EXHAUSTED: quota exceeded for GenerateContent');
+    const service = new ChatService({
+      generate: async (receivedMessages, options) => {
+        calls.push({
+          messages: copyMessages(receivedMessages),
+          modelId: options?.modelId,
+          maxSteps: options?.maxSteps,
+          disableMemory: options?.disableMemory,
+          memory: options?.memory,
+        });
+
+        if (options?.modelId === 'gemini-primary') {
+          throw quotaError;
+        }
+
+        return { text: 'Respuesta stateless desde fallback.' };
+      },
+    });
+
+    assert.equal(await service.answer(statelessChatRequest(messages)), 'Respuesta stateless desde fallback.');
+    assert.deepEqual(
+      calls.map((call) => call.modelId),
+      ['gemini-primary', 'gemini-secondary'],
+    );
+    assert.deepEqual(calls.map((call) => call.messages), [messages, messages]);
+    assert.deepEqual(calls.map((call) => call.memory), [undefined, undefined]);
+    assert.deepEqual(calls.map((call) => call.disableMemory), [true, true]);
   } finally {
     Logger.prototype.warn = originalLoggerWarn;
     restoreLoggerLog();
@@ -213,7 +387,10 @@ test('ChatService exhausts the fallback chain before returning the public quota 
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
+    await assert.rejects(
+      () => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))),
+      assertProviderQuotaException,
+    );
     assert.deepEqual(calls, ['gemini-primary', 'gemini-secondary']);
     assert.deepEqual(
       loggedWarnings.map(([payload]) => (payload as { event: string }).event),
@@ -259,7 +436,10 @@ test('ChatService honors GASTI_AI_MODEL as a hard override without fallback', as
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
+    await assert.rejects(
+      () => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))),
+      assertProviderQuotaException,
+    );
     assert.deepEqual(calls, ['gemini-fixed']);
     assert.deepEqual(
       loggedWarnings.map(([payload]) => (payload as { event: string }).event),
@@ -286,7 +466,7 @@ test('ChatService reports a missing Gemini API key as unavailable', async () => 
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
+    await assert.rejects(() => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))), {
       constructor: ServiceUnavailableException,
       message: 'GEMINI_API_KEY is required to use the chat endpoint.',
     });
@@ -311,7 +491,7 @@ test('ChatService ignores the provider-specific legacy key when GEMINI_API_KEY i
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
+    await assert.rejects(() => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))), {
       constructor: ServiceUnavailableException,
       message: 'GEMINI_API_KEY is required to use the chat endpoint.',
     });
@@ -351,7 +531,7 @@ test('ChatService logs agent generation failures without changing the public err
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
+    await assert.rejects(() => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))), {
       constructor: InternalServerErrorException,
       message: 'Failed to generate a chat answer.',
     });
@@ -429,7 +609,10 @@ test('ChatService logs successful generation metadata without raw messages or to
       }),
     });
 
-    assert.equal(await service.answer(userConversation('Cuanto gaste en Rappi?')), 'Respuesta con datos.');
+    assert.equal(
+      await service.answer(memoryChatRequest(userConversation('Cuanto gaste en Rappi?'))),
+      'Respuesta con datos.',
+    );
 
     const successLog = loggedInfo
       .map(([payload]) => payload as { event?: string; [key: string]: unknown })
@@ -507,7 +690,7 @@ test('ChatService streams safe Spanish activity events without leaking raw strea
 
     const events = [];
 
-    for await (const event of service.streamAnswerEvents(userConversation('Mostrame gastos en Rappi'))) {
+    for await (const event of service.streamAnswerEvents(memoryChatRequest(userConversation('Mostrame gastos en Rappi')))) {
       events.push(event);
     }
 
@@ -572,7 +755,7 @@ test('ChatService emits a Spanish warning before retrying invalid tool arguments
 
     const events = [];
 
-    for await (const event of service.streamAnswerEvents(userConversation('Cuanto gaste?'))) {
+    for await (const event of service.streamAnswerEvents(memoryChatRequest(userConversation('Cuanto gaste?')))) {
       events.push(event);
     }
 
@@ -628,7 +811,7 @@ test('ChatService falls back after an empty agent answer and logs safe metadata'
       },
     });
 
-    assert.equal(await service.answer(userConversation('Cuanto gaste?')), 'Respuesta recuperada.');
+    assert.equal(await service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))), 'Respuesta recuperada.');
     assert.deepEqual(
       calls.map((call) => call.modelId),
       ['gemini-empty', 'gemini-success'],
@@ -681,7 +864,7 @@ test('ChatService returns a clean public error after the final model repeats emp
     });
 
     await assert.rejects(
-      () => service.answer(userConversation('Cuanto gaste?')),
+      () => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))),
       (error: unknown): boolean => {
         assert.ok(error instanceof HttpException);
         assert.equal(error.getStatus(), HttpStatus.BAD_GATEWAY);
@@ -712,7 +895,7 @@ test('ChatService returns a clean public error after the final model repeats emp
   }
 });
 
-test('ChatService retries invalid tool argument failures once with corrective instructions and full history', async () => {
+test('ChatService retries invalid tool argument failures once with memory context preserved', async () => {
   const previousKey = process.env.GEMINI_API_KEY;
   process.env.GEMINI_API_KEY = 'test-key';
 
@@ -736,7 +919,12 @@ test('ChatService retries invalid tool argument failures once with corrective in
 
     const service = new ChatService({
       generate: async (receivedMessages, options) => {
-        calls.push({ messages: copyMessages(receivedMessages), maxSteps: options?.maxSteps });
+        calls.push({
+          messages: copyMessages(receivedMessages),
+          maxSteps: options?.maxSteps,
+          disableMemory: options?.disableMemory,
+          memory: options?.memory,
+        });
 
         if (calls.length === 1) {
           throw invalidToolError;
@@ -746,10 +934,21 @@ test('ChatService retries invalid tool argument failures once with corrective in
       },
     });
 
-    assert.equal(await service.answer(messages), 'Salud fue la categoria que mas aumento.');
+    assert.equal(
+      await service.answer(memoryChatRequest(messages, { resourceId: 'demo-user', threadId: 'retry-thread' })),
+      'Salud fue la categoria que mas aumento.',
+    );
 
     assert.equal(calls.length, 2);
     assert.deepEqual(calls.map((call) => call.maxSteps), [5, 5]);
+    assert.deepEqual(calls.map((call) => call.disableMemory), [undefined, undefined]);
+    assert.deepEqual(
+      calls.map((call) => call.memory),
+      [
+        { resource: 'demo-user', thread: { id: 'retry-thread' } },
+        { resource: 'demo-user', thread: { id: 'retry-thread' } },
+      ],
+    );
     assert.deepEqual(calls[0].messages, messages);
     assert.deepEqual(calls[1].messages.slice(0, -1), messages);
 
@@ -767,6 +966,60 @@ test('ChatService retries invalid tool argument failures once with corrective in
     assert.equal(loggedWarnings.length, 1);
     assert.equal((loggedWarnings[0][0] as { event: string }).event, 'chat.agent_generation_retrying');
     assert.equal(loggedErrors.length, 0);
+  } finally {
+    Logger.prototype.warn = originalLoggerWarn;
+    Logger.prototype.error = originalLoggerError;
+    restoreLoggerLog();
+
+    if (previousKey === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = previousKey;
+    }
+  }
+});
+
+test('ChatService retries invalid tool argument failures in stateless mode without memory', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = 'test-key';
+
+  const restoreLoggerLog = silenceInfoLogs();
+  const originalLoggerWarn = Logger.prototype.warn;
+  const originalLoggerError = Logger.prototype.error;
+  Logger.prototype.warn = function () {};
+  Logger.prototype.error = function () {};
+  const messages = comparisonFollowUpConversation();
+
+  try {
+    const calls: CapturedGenerateCall[] = [];
+    const invalidToolError = new Error('Invalid arguments for tool spendingSummaryTool');
+    invalidToolError.name = 'AI_InvalidToolArgumentsError';
+
+    const service = new ChatService({
+      generate: async (receivedMessages, options) => {
+        calls.push({
+          messages: copyMessages(receivedMessages),
+          maxSteps: options?.maxSteps,
+          disableMemory: options?.disableMemory,
+          memory: options?.memory,
+        });
+
+        if (calls.length === 1) {
+          throw invalidToolError;
+        }
+
+        return { text: 'Salud fue la categoria que mas aumento.' };
+      },
+    });
+
+    assert.equal(await service.answer(statelessChatRequest(messages)), 'Salud fue la categoria que mas aumento.');
+
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls.map((call) => call.memory), [undefined, undefined]);
+    assert.deepEqual(calls.map((call) => call.disableMemory), [true, true]);
+    assert.deepEqual(calls[0].messages, messages);
+    assert.deepEqual(calls[1].messages.slice(0, -1), messages);
+    assert.match(calls[1].messages.at(-1)?.content ?? '', /exact tool input schema/);
   } finally {
     Logger.prototype.warn = originalLoggerWarn;
     Logger.prototype.error = originalLoggerError;
@@ -800,7 +1053,7 @@ test('ChatService does not retry non-tool generation failures', async () => {
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
+    await assert.rejects(() => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))), {
       constructor: InternalServerErrorException,
       message: 'Failed to generate a chat answer.',
     });
@@ -845,7 +1098,7 @@ test('ChatService does not fallback for AI retry errors without quota signals', 
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
+    await assert.rejects(() => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))), {
       constructor: InternalServerErrorException,
       message: 'Failed to generate a chat answer.',
     });
@@ -890,7 +1143,10 @@ test('ChatService maps provider quota failures to Too Many Requests after exhaus
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
+    await assert.rejects(
+      () => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))),
+      assertProviderQuotaException,
+    );
 
     assert.equal(calls, 3);
     assert.deepEqual(
@@ -933,7 +1189,10 @@ test('ChatService detects provider quota failures from nested causes', async () 
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
+    await assert.rejects(
+      () => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))),
+      assertProviderQuotaException,
+    );
 
     assert.equal(loggedWarnings.length, 1);
     assert.equal((loggedWarnings[0][0] as { event: string }).event, 'chat.provider_quota_exceeded');
@@ -980,7 +1239,10 @@ test('ChatService maps quota failures during the invalid-tool retry to Too Many 
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), assertProviderQuotaException);
+    await assert.rejects(
+      () => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))),
+      assertProviderQuotaException,
+    );
 
     assert.equal(calls, 3);
     assert.deepEqual(
@@ -1030,7 +1292,7 @@ test('ChatService returns the public error when the invalid-tool retry also fail
       },
     });
 
-    await assert.rejects(() => service.answer(userConversation('Cuanto gaste?')), {
+    await assert.rejects(() => service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))), {
       constructor: InternalServerErrorException,
       message: 'Failed to generate a chat answer.',
     });

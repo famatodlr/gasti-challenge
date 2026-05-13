@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "resourceId": "demo-user",
+  "currency": "ARS",
+  "knownIncome": [
+    {
+      "label": "Ingreso mensual",
+      "amount": 1500000,
+      "currency": "ARS",
+      "cadence": "monthly",
+      "source": "user_stated"
+    }
+  ],
+  "fixedExpenses": [],
+  "savingGoals": [
+    {
+      "name": "Viaje a Japón",
+      "currency": "ARS",
+      "targetDate": "2025-01-01",
+      "source": "user_stated"
+    }
+  ],
+  "watchCategories": [
+    "delivery"
+  ],
+  "recurringObservations": [],
+  "preferences": {
+    "preferredLanguage": "es-AR",
+    "answerStyle": "concise",
+    "includeEvidence": true
+  }
+}

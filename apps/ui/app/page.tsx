@@ -10,16 +10,12 @@ import {
   type ActivityEvent,
   type ActivityFeedStatus,
 } from '@/lib/activity';
+import { buildChatRequestPayload } from './chat-request';
 
 type ChatRole = 'user' | 'assistant';
 
 type ChatMessage = {
   id: string;
-  role: ChatRole;
-  content: string;
-};
-
-type ApiChatMessage = {
   role: ChatRole;
   content: string;
 };
@@ -37,6 +33,9 @@ const starterQuestions = [
   'Proyectá mi gasto de este mes',
 ];
 
+const THREAD_STORAGE_KEY = 'gasti.threadId';
+const LOCAL_DEMO_DEFAULT_THREAD_ID = 'demo-thread';
+
 const initialMessages: ChatMessage[] = [
   {
     id: 'welcome',
@@ -53,19 +52,37 @@ function createMessage(role: ChatRole, content: string): ChatMessage {
   };
 }
 
+function createThreadId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `thread-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function readOrCreateStoredThreadId(): string {
+  if (typeof window === 'undefined') {
+    return LOCAL_DEMO_DEFAULT_THREAD_ID;
+  }
+
+  const storedThreadId = window.localStorage.getItem(THREAD_STORAGE_KEY)?.trim();
+
+  if (storedThreadId) {
+    return storedThreadId;
+  }
+
+  const nextThreadId = createThreadId();
+  window.localStorage.setItem(THREAD_STORAGE_KEY, nextThreadId);
+
+  return nextThreadId;
+}
+
 function getErrorMessage(payload: ChatResponse | null): string {
   if (payload && typeof payload.error === 'string') {
     return payload.error;
   }
 
   return 'No pude conectar con Gasti. Revisá que el backend esté corriendo e intentá de nuevo.';
-}
-
-function toApiMessages(messages: ChatMessage[]): ApiChatMessage[] {
-  return messages
-    .filter((message) => message.id !== 'welcome')
-    .map(({ role, content }) => ({ role, content: content.trim() }))
-    .filter((message) => message.content.length > 0);
 }
 
 function formatActivityTime(timestamp: string | undefined): string {
@@ -120,25 +137,42 @@ export default function Page() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState(LOCAL_DEMO_DEFAULT_THREAD_ID);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isSendingRef = useRef(false);
   const activityItems = createActivityFeedItems(latestActivity);
 
   useEffect(() => {
+    setThreadId(readOrCreateStoredThreadId());
+  }, []);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  function getActiveThreadId(): string {
+    const activeThreadId = readOrCreateStoredThreadId();
+
+    if (activeThreadId !== threadId) {
+      setThreadId(activeThreadId);
+    }
+
+    return activeThreadId;
+  }
+
+  function buildRequestPayload(content: string) {
+    return buildChatRequestPayload(content, getActiveThreadId());
+  }
 
   function appendActivity(event: ActivityEvent) {
     setLatestActivity((currentEvents) => [...currentEvents, event]);
   }
 
-  async function sendFallbackMessage(nextMessages: ChatMessage[]) {
+  async function sendFallbackMessage(content: string) {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: toApiMessages(nextMessages),
-      }),
+      body: JSON.stringify(buildRequestPayload(content)),
     });
 
     const payload = (await response.json().catch(() => null)) as ChatResponse | null;
@@ -155,13 +189,11 @@ export default function Page() {
     setMessages((currentMessages) => [...currentMessages, createMessage('assistant', payload.answer as string)]);
   }
 
-  async function sendStreamingMessage(nextMessages: ChatMessage[]): Promise<boolean> {
+  async function sendStreamingMessage(content: string): Promise<boolean> {
     const response = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: toApiMessages(nextMessages),
-      }),
+      body: JSON.stringify(buildRequestPayload(content)),
     });
 
     if (!response.ok || !response.body) {
@@ -253,10 +285,10 @@ export default function Page() {
     setIsLoading(true);
 
     try {
-      const streamed = await sendStreamingMessage(nextMessages);
+      const streamed = await sendStreamingMessage(trimmedContent);
 
       if (!streamed) {
-        await sendFallbackMessage(nextMessages);
+        await sendFallbackMessage(trimmedContent);
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : getErrorMessage(null));
@@ -264,6 +296,19 @@ export default function Page() {
       isSendingRef.current = false;
       setIsLoading(false);
     }
+  }
+
+  function startNewChat() {
+    const nextThreadId = createThreadId();
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(THREAD_STORAGE_KEY, nextThreadId);
+    }
+
+    setThreadId(nextThreadId);
+    setMessages(initialMessages);
+    setInput('');
+    setError(null);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -292,9 +337,19 @@ export default function Page() {
                 <p className="mt-0.5 text-xs text-[#77817a]">Conversaciones sobre gastos en ARS</p>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-xs font-medium text-[#93a093]">
-              <span className="h-2 w-2 rounded-full bg-[#a3e635] shadow-[0_0_0_4px_rgba(163,230,53,0.08)]" />
-              En línea
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={startNewChat}
+                disabled={isLoading}
+                className="rounded-md border border-[#27322a] bg-[#101611] px-3 py-2 text-xs font-semibold text-[#b9c5bd] transition-colors hover:border-[#a3e635]/60 hover:text-[#d9ff99] focus-visible:border-[#a3e635]/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#a3e635]/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Nuevo chat
+              </button>
+              <div className="flex items-center gap-2 text-xs font-medium text-[#93a093]">
+                <span className="h-2 w-2 rounded-full bg-[#a3e635] shadow-[0_0_0_4px_rgba(163,230,53,0.08)]" />
+                En línea
+              </div>
             </div>
           </div>
         </header>

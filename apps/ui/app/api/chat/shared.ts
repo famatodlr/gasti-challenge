@@ -12,6 +12,20 @@ export type ChatMessage = {
   content: string;
 };
 
+export type NormalizedChatPayload =
+  | {
+      message: string;
+      messages?: never;
+      resourceId?: string;
+      threadId?: string;
+    }
+  | {
+      message?: never;
+      messages: ChatMessage[];
+      resourceId?: string;
+      threadId?: string;
+    };
+
 export type ChatActivityEventType = 'status' | 'tool_call' | 'tool_result' | 'warning' | 'error' | 'final_answer';
 
 export type ChatActivityEvent = {
@@ -70,6 +84,56 @@ export function normalizeMessages(body: unknown): ChatMessage[] | null {
   }
 
   return normalizedMessages;
+}
+
+function normalizeLegacyMessage(body: Record<string, unknown>): string | null {
+  const content = typeof body.message === 'string' ? body.message.trim() : '';
+  return content ? content : null;
+}
+
+function normalizeOptionalContextString(
+  body: Record<string, unknown>,
+  key: 'resourceId' | 'threadId',
+): string | null | undefined {
+  if (!Object.prototype.hasOwnProperty.call(body, key)) {
+    return undefined;
+  }
+
+  const content = typeof body[key] === 'string' ? body[key].trim() : '';
+  return content ? content : null;
+}
+
+export function normalizeChatPayload(body: unknown): NormalizedChatPayload | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+
+  const hasMessage = Object.prototype.hasOwnProperty.call(body, 'message');
+  const hasMessages = Object.prototype.hasOwnProperty.call(body, 'messages');
+
+  if (hasMessage && hasMessages) {
+    return null;
+  }
+
+  const resourceId = normalizeOptionalContextString(body, 'resourceId');
+  const threadId = normalizeOptionalContextString(body, 'threadId');
+
+  if (resourceId === null || threadId === null) {
+    return null;
+  }
+
+  const context = {
+    ...(resourceId ? { resourceId } : {}),
+    ...(threadId ? { threadId } : {}),
+  };
+
+  if (hasMessages) {
+    const messages = normalizeMessages(body);
+    return messages ? { messages, ...context } : null;
+  }
+
+  const message = normalizeLegacyMessage(body);
+  return message ? { message, ...context } : null;
 }
 
 function normalizeActivityEvent(value: unknown): ChatActivityEvent | null {
