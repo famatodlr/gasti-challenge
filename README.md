@@ -56,7 +56,9 @@ Levantar la app completa:
 bun run dev
 ```
 
-La UI escucha en http://localhost:3000 y se comunica con la API mediante su proxy local. La API escucha en http://localhost:3001.
+La UI escucha en http://localhost:7310 y se comunica con la API mediante su proxy local. La API escucha en http://localhost:7311.
+
+Podés cambiar los puertos locales con `PORT` al correr cada app. Por defecto, el proxy de la UI apunta a `http://localhost:7311/chat`; si necesitás otro backend, usá `GASTI_CHAT_API_URL`.
 
 ## Ejemplos de uso
 
@@ -108,4 +110,3 @@ bun run build
 - `findTransactionsTool`: busca transacciones concretas para mostrar evidencia.
 
 ## Para después
-

@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p ${PORT:-7310}",
     "build": "next build",
     "test": "bun test ./lib",
-    "start": "next start"
+    "start": "next start -p ${PORT:-7310}"
   },
   "dependencies": {
     "next": "^15.1.3",

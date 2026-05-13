@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-export const DEFAULT_CHAT_API_URL = 'http://localhost:3001/chat';
+export const DEFAULT_CHAT_API_URL = 'http://localhost:7311/chat';
 export const GENERIC_CHAT_ERROR = 'No pude conectar con Gasti. Revisá que el backend esté corriendo e intentá de nuevo.';
 export const INVALID_INPUT_ERROR = 'Mandame una pregunta para consultar tus gastos.';
 export const INVALID_RESPONSE_ERROR = 'Gasti respondió con un formato inesperado. Intentá de nuevo.';
