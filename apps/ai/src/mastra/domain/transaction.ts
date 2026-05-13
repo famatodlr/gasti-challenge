@@ -8,6 +8,7 @@ export const categories = [
   'suscripciones',
   'supermercado',
   'comida_fuera',
+  'delivery',
   'transporte',
   'salud',
   'educacion',
@@ -62,7 +63,8 @@ export type Transaction = z.infer<typeof transactionSchema>;
 const serviceMerchants = new Set(['aysa', 'edenor', 'galicia', 'metrogas', 'movistar', 'personal']);
 const subscriptionMerchants = new Set(['disney+', 'netflix', 'spotify']);
 const supermarketMerchants = new Set(['carrefour', 'coto', 'dia', 'jumbo']);
-const eatingOutMerchants = new Set(['havanna', 'mcdonalds', 'pedidosya', 'rappi', 'starbucks']);
+const deliveryMerchants = new Set(['pedidosya', 'rappi']);
+const eatingOutMerchants = new Set(['havanna', 'mcdonalds', 'starbucks']);
 const housingMerchants = new Set(['propietario']);
 const shoppingMerchants = new Set(['mercado libre']);
 const leisureMerchants = new Set(['hoyts', 'mercado pago']);
@@ -84,6 +86,10 @@ export function normalizeTransactionCategory(transaction: Pick<RawTransaction, '
 
   if (supermarketMerchants.has(merchant)) {
     return 'supermercado';
+  }
+
+  if (deliveryMerchants.has(merchant)) {
+    return 'delivery';
   }
 
   if (eatingOutMerchants.has(merchant)) {

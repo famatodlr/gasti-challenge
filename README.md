@@ -94,7 +94,7 @@ bun run build
 ## Notas de implementación
 
 - Los datos son mock y locales, cargados desde `data/transactions.json`.
-- La memoria financiera inicial es estructurada y determinística, cargada desde `data/financial-memory.json`; no guarda transacciones crudas ni usa RAG.
+- La memoria financiera es estructurada, determinística y respaldada por `data/financial-memory.json`; permite guardar hechos financieros explícitos del usuario demo, no guarda transacciones crudas, no usa RAG y no es Mastra Memory.
 - El motor financiero es determinístico: los totales, comparaciones, recurrencias y proyecciones se calculan con funciones y tools.
 - El agente usa Mastra tools para calcular y luego usa IA para interpretar la consulta y redactar la respuesta.
 - La API contempla fallback entre modelos Gemini ante errores de cuota o rate-limit.
@@ -103,6 +103,7 @@ bun run build
 
 - `getFinanceContext`: expone el rango disponible, meses con datos y fecha de referencia sin devolver transacciones crudas.
 - `getFinancialMemory`: expone contexto financiero del usuario demo, como ingresos conocidos, metas, categorías a vigilar y preferencias.
+- `updateFinancialMemory`: persiste hechos financieros explícitos o confirmados con un schema estricto y rechaza datos crudos, secretos, campos no soportados y categorías desconocidas.
 - `spendingSummaryTool`: calcula totales y desgloses de gasto.
 - `comparePeriodsTool`: compara gastos entre dos períodos.
 - `detectRecurringExpensesTool`: detecta gastos recurrentes y suscripciones.

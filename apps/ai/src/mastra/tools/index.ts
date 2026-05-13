@@ -5,3 +5,4 @@ export { forecastMonthEndSpendTool } from './forecast-month-end-spend-tool.ts';
 export { getFinanceContextTool } from './get-finance-context-tool.ts';
 export { getFinancialMemoryTool } from './get-financial-memory-tool.ts';
 export { spendingSummaryTool } from './spending-summary-tool.ts';
+export { updateFinancialMemoryTool } from './update-financial-memory-tool.ts';

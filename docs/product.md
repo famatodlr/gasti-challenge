@@ -23,7 +23,7 @@ Assumptions for the challenge build:
 - Mock transactions only.
 - Expense analysis only. Income can be provided by the user during chat, but it is not stored in the transaction dataset.
 - Spanish-first tone, with English responses when the user writes in English.
-- No persistent memory in the current version. The backend only uses the visible chat history sent in the current request.
+- Structured financial memory can persist explicit user-stated facts for the demo user. Conversation threads are still stateless and Mastra Memory is not enabled.
 
 ## Product Principles
 
@@ -48,8 +48,8 @@ Expected answer:
 
 - Total ARS spent.
 - Main merchants or sub-patterns.
-- A short note if groceries and delivery are mixed in the same category.
-- Optional follow-up: "Queres que lo separe entre super y delivery?"
+- A short note separating supermarket, delivery, and other eating-out patterns when relevant.
+- Optional follow-up: "Queres que vigilemos delivery de cerca?"
 
 ### 2. Period Comparison
 

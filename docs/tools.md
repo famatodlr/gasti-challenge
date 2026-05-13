@@ -40,6 +40,7 @@ const categorySchema = z.enum([
   "suscripciones",
   "supermercado",
   "comida_fuera",
+  "delivery",
   "transporte",
   "salud",
   "educacion",
@@ -134,7 +135,7 @@ z.object({
   })),
   savingGoals: z.array(z.object({
     name: z.string(),
-    targetAmount: z.number(),
+    targetAmount: z.number().optional(),
     currency: z.literal("ARS"),
     targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     monthlyContributionTarget: z.number().optional(),
@@ -161,7 +162,70 @@ Notes:
 
 - The current seed is intentionally sparse and uses empty arrays for facts the user has not supplied.
 - The tool must not return raw transaction rows or transaction IDs.
-- An update-memory tool should only be added after explicit confirmation rules exist.
+
+## `updateFinancialMemory`
+
+Purpose: persist explicit user-stated or user-confirmed financial facts for the single demo resource.
+
+Why it exists: the chat API is stateless beyond the client-provided `messages[]`, so stable context such as income, saving goals, watch categories, confirmed fixed expenses, recurring observations, and response preferences needs an app-owned write path. This is structured JSON-backed financial memory, not Mastra Memory, not RAG, and not embeddings.
+
+Input:
+
+```ts
+z.object({
+  knownIncome: z.array(z.object({
+    label: z.string().optional(),
+    amount: z.number().int().positive(),
+    currency: z.literal("ARS"),
+    cadence: z.enum(["monthly", "weekly", "biweekly", "one_time", "unknown"]),
+    source: z.enum(["user_stated", "user_confirmed"]),
+    notes: z.string().optional(),
+  }).strict()).optional(),
+  fixedExpenses: z.array(z.object({
+    merchant: z.string(),
+    category: categorySchema,
+    amount: z.number().int().positive(),
+    currency: z.literal("ARS"),
+    cadence: z.enum(["monthly", "weekly", "annual", "unknown"]),
+    source: z.enum(["user_stated", "user_confirmed"]),
+    notes: z.string().optional(),
+  }).strict()).optional(),
+  savingGoals: z.array(z.object({
+    name: z.string(),
+    targetAmount: z.number().int().positive().optional(),
+    currency: z.literal("ARS"),
+    targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    monthlyContributionTarget: z.number().int().positive().optional(),
+    source: z.enum(["user_stated", "user_confirmed"]),
+    notes: z.string().optional(),
+  }).strict()).optional(),
+  watchCategories: z.array(categorySchema).optional(),
+  recurringObservations: z.array(z.object({
+    merchant: z.string(),
+    category: categorySchema,
+    observation: z.string(),
+    preference: z.enum(["watch", "reduce", "keep"]),
+    source: z.enum(["user_stated", "user_confirmed"]),
+  }).strict()).optional(),
+  preferences: z.object({
+    preferredLanguage: z.enum(["es-AR", "en"]).optional(),
+    answerStyle: z.enum(["concise", "detailed"]).optional(),
+    includeEvidence: z.boolean().optional(),
+  }).strict().optional(),
+}).strict()
+```
+
+Output: the full `financialMemorySchema` after the merge.
+
+Notes:
+
+- The tool writes `data/financial-memory.json` with stable pretty JSON.
+- The update function validates and merges only allowed structured fields; the model never writes arbitrary JSON.
+- Missing monthly income labels default to `Ingreso mensual`.
+- Saving goals can be stored before a target amount is known.
+- Append-only arrays are deduplicated by stable keys, and watch categories are deduplicated by set membership.
+- Patches with raw transaction rows, transaction IDs, secrets, API keys, sensitive bank data, unsupported fields, or unknown categories are rejected.
+- The agent should not call this tool for facts inferred only from transaction analysis; it should wait for explicit user statement or confirmation.
 
 ## `spendingSummaryTool`
 

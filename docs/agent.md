@@ -74,6 +74,7 @@ Tool use:
 - Use comparison tools for "more than", "less than", "vs", "respecto de", or period-change questions.
 - Use recurring-expense tools for fixed costs, subscriptions, zombie expenses, or monthly commitments.
 - Use forecast tools for "a este ritmo", "fin de mes", "proyeccion", or budget-gap questions.
+- Use updateFinancialMemory only when the user explicitly states or confirms stable personal financial context such as income, saving goals, fixed expenses, watch categories, recurring observations, or response preferences.
 
 Tool-calling rules:
 - Use tools whenever the answer depends on transaction data or calculations.
@@ -84,6 +85,12 @@ Tool-calling rules:
 - Do not use nested dateRange unless a tool schema explicitly requires it.
 - Never use fields such as from1, start, end, date_from, or date_to.
 - Use ISO dates in YYYY-MM-DD format.
+- For updateFinancialMemory, use only the strict structured fields knownIncome, fixedExpenses, savingGoals, watchCategories, recurringObservations, and preferences.
+- For saved income, use cadence, not frequency. If the user says they earn money monthly, save cadence as "monthly".
+- For saved watch categories, use canonical categories only: vivienda, servicios, suscripciones, supermercado, comida_fuera, delivery, transporte, salud, educacion, compras, or ocio.
+- Never use updateFinancialMemory for raw transaction rows, transaction IDs, API keys, secrets, bank details, arbitrary notes, or facts inferred only from transaction analysis.
+- If transaction analysis suggests a recurring pattern, ask for or wait for explicit confirmation before saving it as financial memory.
+- After updateFinancialMemory succeeds, briefly tell the user which stable facts were saved.
 - If the user asks a financial question without a date range, prefer the full available transaction dataset instead of asking for a range, unless a specific period is truly required.
 - For follow-up questions, reuse the most recently discussed date range unless the user clearly changes it.
 - If the user mentions a month without a year, infer the year from the available mock dataset or existing project convention, and use the full month date range.
@@ -102,6 +109,7 @@ Register these tools on the agent:
 
 - `getFinanceContext`
 - `getFinancialMemory`
+- `updateFinancialMemory`
 - `spendingSummaryTool`
 - `findTransactionsTool`
 - `comparePeriodsTool`
@@ -114,7 +122,7 @@ The tool details and schemas live in `docs/tools.md`.
 
 The current version does not implement persistent Mastra Memory. The API accepts client-supplied `messages[]` history and passes it to the agent as stateless conversation context for a single request. The backend does not persist threads, resources, user accounts, summaries, or embeddings.
 
-The agent now has a deterministic, read-only financial memory seed in `data/financial-memory.json`, exposed through `getFinancialMemory`. This is app-owned structured context for the single demo resource `demo-user`, not a generic RAG layer and not Mastra-managed persistence.
+The agent now has deterministic editable financial memory in `data/financial-memory.json`, exposed through `getFinancialMemory` and updated only through `updateFinancialMemory`. This is app-owned structured context for the single demo resource `demo-user`, not a generic RAG layer and not Mastra-managed persistence.
 
 Current financial memory can represent:
 
@@ -126,6 +134,8 @@ Current financial memory can represent:
 - Preferences such as language, answer style, and evidence display.
 
 Current financial memory should not store raw transaction rows, transaction IDs, API keys, secrets, sensitive bank data, or model-inferred facts presented as confirmed memory.
+
+`updateFinancialMemory` validates a strict patch schema, rejects unsupported or raw/sensitive fields, deduplicates append-only facts, and writes stable pretty JSON. It is intended for user-stated or user-confirmed facts only; transaction-derived observations remain analysis unless the user explicitly confirms them.
 
 ## Future Evolution: Mastra Memory
 
