@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildDeterministicMonthlyReviewAnswer,
+  MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS,
   runMonthlyFinancialReviewWorkflow,
 } from './monthly-review-workflow.ts';
 
@@ -74,9 +75,24 @@ test('monthly review workflow answer uses real Markdown bullets for breakdown ro
     { answerGenerator: deterministicAnswerGenerator },
   );
 
-  assert.match(result.answer, /\n- \*\*Vivienda:\*\* ARS 250\.000/);
+  assert.match(result.answer, /## Resumen de mayo 2026 📊/);
+  assert.match(result.answer, /### Categorías principales/);
+  assert.match(result.answer, /### Gastos destacados/);
+  assert.match(result.answer, /### Puntos para mirar 👀/);
+  assert.match(result.answer, /\n- 🏠 \*\*Vivienda:\*\* ARS 250\.000/);
   assert.match(result.answer, /\n- \*\*Propietario:\*\* ARS 250\.000/);
   assert.doesNotMatch(result.answer, /(?:^|\n)\*\*[^*\n]+:\*\* ARS/m);
+});
+
+test('monthly review workflow narrator instructions require markdown sections and bullet rows', () => {
+  assert.match(MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS, /short friendly intro/i);
+  assert.match(MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS, /state the period and total clearly/i);
+  assert.match(MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS, /Resumen 📊/);
+  assert.match(MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS, /Categorías principales/);
+  assert.match(MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS, /Gastos destacados/);
+  assert.match(MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS, /Puntos para mirar 👀/);
+  assert.match(MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS, /Use real Markdown bullets with "- " for every multi-row financial breakdown/i);
+  assert.match(MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS, /Do not write giant paragraphs/i);
 });
 
 test('monthly review workflow returns a helpful clarification when the period is missing', async () => {

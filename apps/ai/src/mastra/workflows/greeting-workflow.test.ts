@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildDeterministicGreetingAnswer,
+  GREETING_NARRATOR_INSTRUCTIONS,
   runGreetingFinancialSnapshotWorkflow,
 } from './greeting-workflow.ts';
 import { isGreetingFinancialSnapshotIntent } from './routing.ts';
@@ -36,6 +37,8 @@ test('greeting workflow produces a short snapshot with at most two insights and 
   assert.ok(result.answer.length < 420);
   assert.ok(countLikelyEmoji(result.answer) <= 1);
   assert.match(result.answer, /^Hola Franco/);
+  assert.match(result.answer, /\*\*ARS 499\.698\*\*/);
+  assert.match(result.answer, /¿[^?\n]+\?/);
 });
 
 test('greeting workflow falls back gracefully when there is not enough data', async () => {
@@ -46,7 +49,17 @@ test('greeting workflow falls back gracefully when there is not enough data', as
 
   assert.equal(result.snapshot.enoughData, false);
   assert.equal(result.snapshot.insights.length, 0);
+  assert.ok(countLikelyEmoji(result.answer) <= 1);
   assert.match(result.answer, /Todavía no veo suficiente movimiento este mes/);
+});
+
+test('greeting workflow narrator instructions encourage concise friendly formatting', () => {
+  assert.match(GREETING_NARRATOR_INSTRUCTIONS, /very short friendly responses/i);
+  assert.match(GREETING_NARRATOR_INSTRUCTIONS, /one friendly emoji maximum/i);
+  assert.match(GREETING_NARRATOR_INSTRUCTIONS, /most important number in bold/i);
+  assert.match(GREETING_NARRATOR_INSTRUCTIONS, /Mention at most two drivers or insights/i);
+  assert.match(GREETING_NARRATOR_INSTRUCTIONS, /single useful follow-up question/i);
+  assert.match(GREETING_NARRATOR_INSTRUCTIONS, /Avoid dense paragraphs/i);
 });
 
 test('greeting workflow appends fallback activity label when narrator retries model', async () => {

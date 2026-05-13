@@ -218,13 +218,23 @@ const google = createGoogleGenerativeAI({
   apiKey: getGeminiApiKey(),
 });
 
+export const MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS = `You write final answers for Gasti financial workflows.
+
+You receive structured, already-calculated financial data. Do not invent transactions, merchants, categories, dates, totals, percentages, trends, or recommendations. Do not call tools.
+
+Reply in friendly Argentine Spanish with clean, concise Markdown.
+Start with a short friendly intro.
+State the period and total clearly near the top.
+Use scannable Markdown sections modeled on "Resumen 📊", "Categorías principales", "Gastos destacados", and "Puntos para mirar 👀".
+Use real Markdown bullets with "- " for every multi-row financial breakdown, including categories, merchants, expenses, and insight rows.
+Never output bare bold-label rows like "**Vivienda:** ARS 250.000" outside a bullet list.
+Do not write giant paragraphs.
+Use restrained emojis only when they add clarity, usually in section titles or important bullets.
+Use at most two genuinely relevant follow-up questions.`;
+
 const workflowNarratorAgent = new Agent({
   name: 'GastiWorkflowNarrator',
-  instructions: `You write final answers for Gasti financial workflows.
-
-You receive structured, already-calculated financial data. Do not invent transactions, merchants, categories, dates, totals, or percentages. Do not call tools.
-
-Reply in friendly Argentine Spanish with concise Markdown. Use real Markdown bullets with "- " for all category, merchant, expense, or insight rows. Never output bare bold-label rows like "**Vivienda:** ARS 250.000" outside a bullet list. Use at most two genuinely relevant follow-up questions.`,
+  instructions: MONTHLY_REVIEW_NARRATOR_INSTRUCTIONS,
   model: ({ runtimeContext }) => {
     const runtimeModel = runtimeContext.get(WORKFLOW_MODEL_RUNTIME_CONTEXT_KEY);
     const runtimeModelId = typeof runtimeModel === 'string' ? runtimeModel.trim() : '';
@@ -240,35 +250,35 @@ export function buildDeterministicMonthlyReviewAnswer({
     return clarification ?? '¿De qué mes querés que haga el resumen financiero? Puedo revisar abril 2026 o mayo 2026.';
   }
 
-  const periodSuffix = review.period.isPartial && review.period.comparableDay
-    ? ` hasta el día ${review.period.comparableDay}`
-    : '';
   const comparisonSentence = buildComparisonSentence(review);
-  const insightBullets = review.insights.slice(0, 3).map((insight) => `- **${insight.title}:** ${insight.detail}`);
+  const insightBullets = review.insights.slice(0, 3).map((insight) => {
+    const emoji = getInsightEmoji(insight.type, insight.detail);
+    return `- ${emoji ? `${emoji} ` : ''}**${insight.title}:** ${insight.detail}`;
+  });
   const expenseBullets = review.largestExpenses
     .slice(0, 3)
     .map(
       (expense) =>
-        `- **${expense.merchant}:** ${formatARS(expense.amount)} (${getCategoryLabel(expense.category)}, ${expense.date})`,
+        `- **${expense.merchant}:** ${formatARS(expense.amount)} (${withCategoryEmoji(getCategoryLabel(expense.category), expense.category)}, ${expense.date})`,
     );
   const categoryBullets = review.topCategories
-    .slice(0, 3)
-    .map((category) => `- **${getCategoryLabel(category.category)}:** ${formatARS(category.amount)}`);
+    .slice(0, 5)
+    .map((category) => `- ${getCategoryEmoji(category.category)} **${getCategoryLabel(category.category)}:** ${formatARS(category.amount)}`);
+  const introLine = `Te dejo un resumen claro de **${review.period.label}**.`;
+  const totalLine = buildMonthlyReviewTotalLine(review);
 
   return [
-    `En **${review.period.label}** venís gastando **${formatARS(review.kpis.totalSpending)}**${periodSuffix}. ${comparisonSentence}`,
-    'Lo más importante:',
-    insightBullets.length > 0 ? insightBullets.join('\n') : '- **Movimiento:** No aparece un cambio fuerte con los datos disponibles.',
-    'Gastos que más explican el mes:',
-    expenseBullets.join('\n'),
-    'Categorías principales:',
+    introLine,
+    `## Resumen de ${review.period.label} 📊`,
+    totalLine,
+    comparisonSentence,
+    '### Categorías principales',
     categoryBullets.join('\n'),
-    `Mi lectura: el mes está explicado sobre todo por ${review.topCategories
-      .slice(0, 2)
-      .map((category) => getCategoryLabel(category.category).toLocaleLowerCase('es-AR'))
-      .join(' y ')}. Conviene mirar esos drivers antes de sacar conclusiones por gastos chicos.`,
-    'Podés seguir con:',
-    '- "¿Qué gastos explican esa diferencia?"',
+    '### Gastos destacados',
+    expenseBullets.join('\n'),
+    '### Puntos para mirar 👀',
+    insightBullets.length > 0 ? insightBullets.join('\n') : '- **Movimiento:** No aparece un cambio fuerte con los datos disponibles.',
+    '¿Querés que te compare categoría por categoría contra el período anterior?',
   ].join('\n\n');
 }
 
@@ -756,6 +766,17 @@ function buildComparisonSentence(review: MonthlyReviewResult): string {
   return `Eso está **${formatPercent(Math.abs(comparison.percentageDifference))} ${direction}** de ${comparison.previousPeriodLabel}.`;
 }
 
+function buildMonthlyReviewTotalLine(review: MonthlyReviewResult): string {
+  const monthName = monthNames[review.period.month - 1];
+
+  if (review.period.isPartial) {
+    const toDay = review.period.comparableDay ?? Number(review.period.range.to.slice(-2));
+    return `Del **1 al ${toDay} de ${monthName}**, gastaste **${formatARS(review.kpis.totalSpending)}**.`;
+  }
+
+  return `En **${review.period.label}**, gastaste **${formatARS(review.kpis.totalSpending)}**.`;
+}
+
 function resolveTargetMonth(
   message: string,
   currentDate: string,
@@ -909,6 +930,28 @@ function getCategoryLabel(category: string): string {
   return categoryLabels[category as Category] ?? titleCase(category.replace(/_/g, ' '));
 }
 
+function getCategoryEmoji(category: string): string {
+  const categoryEmojiMap: Partial<Record<Category, string>> = {
+    vivienda: '🏠',
+    salud: '🏥',
+    supermercado: '🛒',
+    compras: '🛍️',
+    transporte: '🚕',
+    comida_fuera: '🍽️',
+    delivery: '🍽️',
+    suscripciones: '💳',
+    servicios: '💡',
+  };
+
+  return categoryEmojiMap[category as Category] ?? '•';
+}
+
+function withCategoryEmoji(label: string, category: string): string {
+  const emoji = getCategoryEmoji(category);
+
+  return emoji === '•' ? label : `${emoji} ${label}`;
+}
+
 function titleCase(value: string): string {
   return value
     .split(' ')
@@ -934,6 +977,26 @@ function formatPercent(value: number): string {
     maximumFractionDigits: 1,
     minimumFractionDigits: 0,
   }).format(value)}%`;
+}
+
+function getInsightEmoji(type: MonthlyReviewResult['insights'][number]['type'], detail: string): string {
+  if (type === 'spending_pace' || /\bsubi[oó]\b/i.test(detail)) {
+    return '📈';
+  }
+
+  if (/\bbaj[oó]\b/i.test(detail)) {
+    return '📉';
+  }
+
+  if (type === 'large_expense') {
+    return '⚠️';
+  }
+
+  if (type === 'recurring_payment') {
+    return '💳';
+  }
+
+  return '💡';
 }
 
 function normalizeText(value: string): string {

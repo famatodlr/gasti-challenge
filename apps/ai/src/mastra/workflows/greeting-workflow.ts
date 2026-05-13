@@ -92,11 +92,19 @@ const google = createGoogleGenerativeAI({
   apiKey: getGeminiApiKey(),
 });
 
+export const GREETING_NARRATOR_INSTRUCTIONS = `You write very short friendly responses for Gasti.
+
+Use only the structured snapshot provided. Do not invent financial data.
+Reply in friendly Argentine Spanish with clean Markdown and short paragraphs.
+Use one friendly emoji maximum.
+Highlight the most important number in bold.
+Mention at most two drivers or insights, and keep them grounded in the structured data.
+End with a single useful follow-up question.
+Avoid dense paragraphs and avoid long inline financial lists.`;
+
 const greetingNarratorAgent = new Agent({
   name: 'GastiGreetingWorkflowNarrator',
-  instructions: `You write very short greeting responses for Gasti.
-
-Use only the structured snapshot provided. Do not invent financial data. Spanish should be friendly and concise. Use one small emoji maximum. Mention at most two insights. Suggest at most one useful next question.`,
+  instructions: GREETING_NARRATOR_INSTRUCTIONS,
   model: ({ runtimeContext }) => {
     const runtimeModel = runtimeContext.get(WORKFLOW_MODEL_RUNTIME_CONTEXT_KEY);
     const runtimeModelId = typeof runtimeModel === 'string' ? runtimeModel.trim() : '';
@@ -108,23 +116,25 @@ export function buildDeterministicGreetingAnswer({ snapshot }: Pick<GreetingAnsw
   if (!snapshot.enoughData) {
     return [
       'Hola Franco 👋',
-      'Todavía no veo suficiente movimiento este mes para sacar una conclusión fuerte. Puedo ayudarte a revisar gastos, detectar recurrentes o comparar meses.',
+      'Todavía no veo suficiente movimiento este mes para sacar una conclusión fuerte.',
+      '¿Querés que revise gastos puntuales, recurrentes o una comparación contra el mes pasado?',
     ].join('\n\n');
   }
 
   const comparison = snapshot.comparison;
+  const driverText = buildGreetingDriverSentence(snapshot.insights);
   const comparisonText =
     comparison?.percentageDifference === null || comparison?.percentageDifference === undefined
-      ? `${snapshot.temporalContext.label} viene con ${formatARS(snapshot.currentMonthSpending)} gastados.`
-      : `${capitalize(snapshot.temporalContext.label.split(' ')[0])} viene ${formatPercent(
-          Math.abs(comparison.percentageDifference),
-        )} ${comparison.absoluteDifference >= 0 ? 'arriba' : 'abajo'} que ${comparison.previousPeriodLabel}.`;
-  const insightText = buildGreetingInsightSentence(snapshot.insights);
+      ? ''
+      : `Vas **${formatPercent(Math.abs(comparison.percentageDifference))} ${
+          comparison.absoluteDifference >= 0 ? 'arriba' : 'abajo'
+        }** que ${comparison.previousPeriodLabel}${driverText ? `, sobre todo por ${driverText}` : ''}.`;
 
   return [
     'Hola Franco 👋',
-    `${comparisonText}${insightText ? ` ${insightText}` : ''}`,
-    'Podés preguntarme: “¿qué gastos explican esa diferencia?”',
+    `En **${snapshot.temporalContext.label}** llevás **${formatARS(snapshot.currentMonthSpending)}** gastados.`,
+    comparisonText || (driverText ? `Los drivers más claros por ahora son ${driverText}.` : 'Todavía no aparece un driver dominante en los datos.'),
+    '¿Querés que te muestre qué gastos explican la diferencia?',
   ].join('\n\n');
 }
 
@@ -371,18 +381,21 @@ function scoreInsight(insight: MonthlyReviewResult['insights'][number]): number 
   return severityScore + typeScore;
 }
 
-function buildGreetingInsightSentence(insights: GreetingFinancialSnapshot['insights']): string {
-  if (insights.length === 0) {
+function buildGreetingDriverSentence(insights: GreetingFinancialSnapshot['insights']): string {
+  const titles = insights
+    .slice(0, 2)
+    .map((insight) => insight.title.trim())
+    .filter(Boolean);
+
+  if (titles.length === 0) {
     return '';
   }
 
-  const titles = insights.map((insight) => insight.title.toLocaleLowerCase('es-AR'));
-
   if (titles.length === 1) {
-    return `Lo más relevante ahora es ${titles[0]}.`;
+    return `**${titles[0]}**`;
   }
 
-  return `Lo que más está moviendo la aguja es ${titles[0]} y ${titles[1]}.`;
+  return `**${titles[0]}** y **${titles[1]}**`;
 }
 
 function formatPercent(value: number): string {
