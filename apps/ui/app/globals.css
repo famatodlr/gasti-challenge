@@ -7,12 +7,16 @@
 }
 
 html {
-  background: #f3f6f4;
+  background: #050706;
+  color-scheme: dark;
 }
 
 body {
   min-height: 100vh;
   margin: 0;
+  background: #050706;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: rgba(163, 230, 53, 0.12);
 }
 
 button,

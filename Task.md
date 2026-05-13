@@ -120,8 +120,8 @@ cp apps/ai/.env.example apps/ai/.env   # agregá tu GEMINI_API_KEY
 
 ```bash
 bun dev                    # las 3 apps en paralelo (turbo)
-bun dev --filter=api       # NestJS         → http://localhost:3001/health
-bun dev --filter=ui        # Next.js        → http://localhost:3000
+bun dev --filter=api       # NestJS         → http://localhost:7311/health
+bun dev --filter=ui        # Next.js        → http://localhost:7310
 bun dev --filter=ai        # Mastra dev     → playground local
 ```
 
