@@ -146,6 +146,20 @@ test('Gasti agent instructions mention partial-period and comparison-basis handl
   assert.match(GASTI_AGENT_INSTRUCTIONS, /avoid implying a full like-for-like month comparison/i);
 });
 
+test('Gasti agent instructions define the structured response contract', () => {
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Structured response contract:/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /GastiStructuredResponse/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /kind.*required/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /summary.*required/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /use enriched tool outputs first/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /periodMeta/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /comparisonBasis/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /top movers/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /forecast projection metadata/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /include caveats when the tool indicates partial periods/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /do not return arbitrary Markdown as the final answer/i);
+});
+
 test('conversation memory database path is independent of process cwd', () => {
   const originalCwd = process.cwd();
 

@@ -18,6 +18,15 @@ import {
   type GastiConversationMemoryContext,
 } from './conversation-memory.ts';
 import { getGastiModelId, getGeminiApiKey } from './model.ts';
+export {
+  buildGastiResponseMarkdown,
+  buildSafeGastiResponseFallback,
+  gastiResponseKindSchema,
+  gastiStructuredResponseSchema,
+  normalizeGastiStructuredResponse,
+  type GastiResponseKind,
+  type GastiStructuredResponse,
+} from './response-builder.ts';
 
 export {
   DEMO_RESOURCE_ID,
@@ -88,6 +97,19 @@ Reasoning style:
 - When a tool returns periodMeta with completeness "partial", explicitly say the period is month-to-date or partial.
 - When a tool returns comparisonBasis with sameLength false, explain that the comparison used exact ranges and avoid implying a full like-for-like month comparison.
 - Prefer narrating from topGroups, topMerchants, topMovers, summary, drivers, highlights, periodMeta, and comparisonBasis before scanning raw arrays.
+
+Structured response contract:
+- When the structured response path is active, produce content matching GastiStructuredResponse instead of arbitrary final Markdown.
+- GastiStructuredResponse fields are: kind, headline, summary, bullets, caveats, and suggestedQuestion.
+- kind is required.
+- summary is required.
+- headline, bullets, caveats, and suggestedQuestion are optional and should be omitted when not useful.
+- Valid kinds are short_answer, financial_insight, comparison, breakdown, greeting, and clarification.
+- Use enriched tool outputs first: periodMeta, comparisonBasis, summaries, highlights, top movers, recurring summaries or classifications, and forecast projection metadata.
+- Include caveats when the tool indicates partial periods or non-like-for-like comparison ranges.
+- Do not invent financial facts not supported by tool outputs.
+- Do not return arbitrary Markdown as the final answer when the structured response path is being used.
+- Only include suggestedQuestion when it is directly related and genuinely useful.
 
 Response formatting contract:
 - Write short paragraphs.

@@ -943,6 +943,127 @@ test('ChatService logs successful generation metadata without raw messages or to
   }
 });
 
+test('ChatService renders structured output into final Markdown text in the public response', async () => {
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService({
+      generate: async () => ({
+        text: 'Raw fallback that should not win.',
+        object: {
+          kind: 'comparison',
+          headline: 'Mayo viene más alto que abril',
+          summary: 'Hasta el 13/05 gastaste **ARS 499.698**.',
+          bullets: ['Delivery fue el principal driver de la suba.', 'Salud también aumentó.'],
+          caveats: ['Mayo todavía está incompleto.'],
+          suggestedQuestion: '¿Querés ver qué comercios explican más la suba?',
+        },
+        finishReason: 'stop',
+      }),
+    });
+
+    const response = await service.answerWithSteps(memoryChatRequest(userConversation('Comparame mayo contra abril')));
+
+    assert.equal(
+      response.answer,
+      [
+        '### Mayo viene más alto que abril',
+        '',
+        'Hasta el 13/05 gastaste **ARS 499.698**.',
+        '',
+        '- Delivery fue el principal driver de la suba.',
+        '- Salud también aumentó.',
+        '',
+        '_Nota: Mayo todavía está incompleto._',
+        '',
+        '¿Querés ver qué comercios explican más la suba?',
+      ].join('\n'),
+    );
+    assert.equal(response.answer.includes('"kind"'), false);
+    assert.equal(response.answer.includes('"summary"'), false);
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService falls back to sanitized raw text when structured output is invalid', async () => {
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService({
+      generate: async () => ({
+        text: '  Respuesta libre usable.  ',
+        object: {
+          kind: 'comparison',
+          summary: '   ',
+        },
+      }),
+    });
+
+    assert.equal(await service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))), 'Respuesta libre usable.');
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService returns a generic safe fallback when structured output and text are unusable', async () => {
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService({
+      generate: async () => ({
+        text: '   ',
+        object: {
+          kind: 'comparison',
+          summary: '   ',
+        },
+        finishReason: 'stop',
+      }),
+    });
+
+    assert.equal(
+      await service.answer(memoryChatRequest(userConversation('Cuanto gaste?'))),
+      'No pude armar una respuesta confiable con los datos disponibles.',
+    );
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService can render structured partial-period caveats without exposing raw JSON', async () => {
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService({
+      generate: async () => ({
+        text: '',
+        object: {
+          kind: 'financial_insight',
+          headline: 'Mayo viene arriba del ritmo anterior',
+          summary: 'Hasta hoy el gasto acumulado está por encima del mes base comparable.',
+          caveats: ['La comparación usa un período parcial y no un mes completo.'],
+        },
+        finishReason: 'stop',
+      }),
+    });
+
+    const answer = await service.answer(memoryChatRequest(userConversation('Como viene mayo?')));
+
+    assert.match(answer, /_Nota: La comparación usa un período parcial y no un mes completo\._/);
+    assert.equal(answer.includes('"caveats"'), false);
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
 test('ChatService streams safe Spanish activity events without leaking raw stream payloads', async () => {
   const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
   const restoreLoggerLog = silenceInfoLogs();
