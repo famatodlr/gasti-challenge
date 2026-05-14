@@ -16,6 +16,7 @@
     "test:agents": "bun test src/mastra/agents/*.test.ts",
     "test:domain": "bun test src/mastra/domain/*.test.ts",
     "test:tools": "bun test src/mastra/tools/finance-tools.test.ts",
+    "test:workflows": "bun test src/mastra/workflows/*.test.ts",
     "verify:domain": "node src/mastra/domain/verify-analytics.ts"
   },
   "dependencies": {

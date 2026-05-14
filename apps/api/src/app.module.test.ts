@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import test from 'node:test';
 import { NestFactory } from '@nestjs/core';
 

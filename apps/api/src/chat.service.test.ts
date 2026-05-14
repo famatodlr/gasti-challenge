@@ -7,6 +7,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { GastiModelFallbackExhaustedError } from 'ai/mastra';
 
 import { ChatService } from './chat.service.ts';
 import type { ChatRequestContext, NormalizedChatRequest } from './chat.types.ts';
@@ -175,6 +176,309 @@ function assertProviderQuotaException(error: unknown): boolean {
   return true;
 }
 
+test('ChatService routes monthly review intent to the monthly workflow', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+  const messages = userConversation('Haceme un resumen financiero de mayo 2026');
+
+  try {
+    let monthlyCalls = 0;
+    const service = new ChatService(
+      {
+        generate: async () => {
+          throw new Error('agent should not be called for monthly review intent');
+        },
+      },
+      {
+        runMonthlyReview: async (input) => {
+          monthlyCalls += 1;
+          assert.equal(input.message, 'Haceme un resumen financiero de mayo 2026');
+
+          return {
+            answer: 'Resumen mensual por workflow.',
+            activityLabels: [
+              'Detectando período',
+              'Calculando KPIs',
+              'Comparando contra el período anterior',
+              'Buscando insights',
+              'Armando respuesta',
+            ],
+          };
+        },
+        runGreetingSnapshot: async () => {
+          throw new Error('greeting workflow should not be called');
+        },
+      },
+    );
+
+    const response = await service.answerWithSteps(memoryChatRequest(messages));
+
+    assert.equal(response.answer, 'Resumen mensual por workflow.');
+    assert.equal(monthlyCalls, 1);
+    assert.deepEqual(
+      response.steps?.map((event) => event.label),
+      [
+        'Analizando consulta',
+        'Detectando período',
+        'Calculando KPIs',
+        'Comparando contra el período anterior',
+        'Buscando insights',
+        'Armando respuesta',
+        'Respuesta final generada',
+      ],
+    );
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService routes simple greeting intent to the greeting workflow', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    let greetingCalls = 0;
+    const service = new ChatService(
+      {
+        generate: async () => {
+          throw new Error('agent should not be called for plain greetings');
+        },
+      },
+      {
+        runMonthlyReview: async () => {
+          throw new Error('monthly workflow should not be called');
+        },
+        runGreetingSnapshot: async (input) => {
+          greetingCalls += 1;
+          assert.equal(input.message, 'Hola');
+
+          return {
+            answer: 'Hola Franco 👋\nMayo viene arriba de abril comparable.',
+            activityLabels: ['Detectando contexto', 'Armando respuesta'],
+          };
+        },
+      },
+    );
+
+    assert.equal(
+      await service.answer(memoryChatRequest(userConversation('Hola'))),
+      'Hola Franco 👋\nMayo viene arriba de abril comparable.',
+    );
+    assert.equal(greetingCalls, 1);
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService keeps normal finance questions on the existing agent route', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    let agentCalls = 0;
+    const service = new ChatService(
+      {
+        generate: async (receivedMessages) => {
+          agentCalls += 1;
+          assert.deepEqual(receivedMessages, userConversation('Cuánto gasté en supermercado en mayo?'));
+
+          return { text: 'Gastaste ARS 38.500 en supermercado.' };
+        },
+      },
+      {
+        runMonthlyReview: async () => {
+          throw new Error('monthly workflow should not be called for normal finance questions');
+        },
+        runGreetingSnapshot: async () => {
+          throw new Error('greeting workflow should not be called for normal finance questions');
+        },
+      },
+    );
+
+    assert.equal(
+      await service.answer(memoryChatRequest(userConversation('Cuánto gasté en supermercado en mayo?'))),
+      'Gastaste ARS 38.500 en supermercado.',
+    );
+    assert.equal(agentCalls, 1);
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService does not route greeting workflow when the message contains a real finance question', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    let agentCalls = 0;
+    const service = new ChatService(
+      {
+        generate: async () => {
+          agentCalls += 1;
+
+          return { text: 'Comparación hecha por el agente.' };
+        },
+      },
+      {
+        runMonthlyReview: async () => {
+          throw new Error('monthly workflow should not be called');
+        },
+        runGreetingSnapshot: async () => {
+          throw new Error('greeting workflow should not be called when there is a finance question');
+        },
+      },
+    );
+
+    assert.equal(
+      await service.answer(memoryChatRequest(userConversation('Hola, comparame abril contra mayo'))),
+      'Comparación hecha por el agente.',
+    );
+    assert.equal(agentCalls, 1);
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService streams workflow activity as valid chat events', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService(
+      {
+        generate: async () => {
+          throw new Error('generate should not be called by streamAnswerEvents');
+        },
+        stream: async () => {
+          throw new Error('agent stream should not be called for monthly review workflow');
+        },
+      },
+      {
+        runMonthlyReview: async () => ({
+          answer: 'Resumen mensual por workflow.',
+          activityLabels: [
+            'Detectando período',
+            'Calculando KPIs',
+            'Comparando contra el período anterior',
+            'Buscando insights',
+            'Armando respuesta',
+          ],
+        }),
+        runGreetingSnapshot: async () => {
+          throw new Error('greeting workflow should not be called');
+        },
+      },
+    );
+    const events = [];
+
+    for await (const event of service.streamAnswerEvents(
+      memoryChatRequest(userConversation('Resumen de mayo 2026')),
+    )) {
+      events.push(event);
+    }
+
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ['status', 'status', 'status', 'status', 'status', 'status', 'final_answer'],
+    );
+    assert.deepEqual(
+      events.map((event) => event.label),
+      [
+        'Analizando consulta',
+        'Detectando período',
+        'Calculando KPIs',
+        'Comparando contra el período anterior',
+        'Buscando insights',
+        'Armando respuesta',
+        'Respuesta final generada',
+      ],
+    );
+    assert.equal(events.at(-1)?.answer, 'Resumen mensual por workflow.');
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService includes workflow fallback activity labels in step metadata', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService(
+      {
+        generate: async () => {
+          throw new Error('agent should not be called');
+        },
+      },
+      {
+        runMonthlyReview: async () => ({
+          answer: 'Resumen mensual por workflow.',
+          activityLabels: ['Detectando período', 'Armando respuesta', 'Reintentando con otro modelo'],
+        }),
+        runGreetingSnapshot: async () => {
+          throw new Error('greeting workflow should not be called');
+        },
+      },
+    );
+
+    const response = await service.answerWithSteps(memoryChatRequest(userConversation('Resumen de mayo 2026')));
+
+    assert.deepEqual(
+      response.steps?.map((event) => event.label),
+      [
+        'Analizando consulta',
+        'Detectando período',
+        'Armando respuesta',
+        'Reintentando con otro modelo',
+        'Respuesta final generada',
+      ],
+    );
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
+test('ChatService maps workflow model exhaustion to the same public quota error', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService(
+      {
+        generate: async () => {
+          throw new Error('agent should not be called');
+        },
+      },
+      {
+        runMonthlyReview: async () => {
+          throw new GastiModelFallbackExhaustedError(
+            ['gemini-primary', 'gemini-secondary'],
+            [new Error('quota1'), new Error('quota2')],
+            new Error('quota2'),
+          );
+        },
+        runGreetingSnapshot: async () => {
+          throw new Error('greeting workflow should not be called');
+        },
+      },
+    );
+
+    await assert.rejects(
+      () => service.answerWithSteps(memoryChatRequest(userConversation('Resumen financiero de mayo 2026'))),
+      assertProviderQuotaException,
+    );
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
 test('ChatService invokes the finance agent with full history in stateless legacy mode', async () => {
   const restoreEnv = useTestAiEnv();
   const restoreLoggerLog = silenceInfoLogs();
@@ -246,7 +550,10 @@ test('ChatService uses the local demo fallback memory thread when no threadId is
       },
     });
 
-    assert.equal(await service.answer(memoryChatRequest(userConversation('Hola'))), 'Respuesta con thread demo.');
+    assert.equal(
+      await service.answer(memoryChatRequest(userConversation('Qué veníamos hablando?'))),
+      'Respuesta con thread demo.',
+    );
   } finally {
     restoreEnv();
     restoreLoggerLog();

@@ -29,6 +29,11 @@ export {
   sanitizeMastraMemoryMessagesForGasti,
 } from './conversation-memory.ts';
 export { getGastiModelFallbackChain, getGastiModelId, getGeminiApiKey } from './model.ts';
+export {
+  GastiModelFallbackExhaustedError,
+  generateWithGastiModelFallback,
+  isGastiQuotaOrRateLimitError,
+} from './model-fallback.ts';
 
 const GASTI_MODEL_RUNTIME_CONTEXT_KEY = 'gasti.modelId';
 
@@ -83,11 +88,13 @@ Reasoning style:
 
 Response formatting contract:
 - Write short paragraphs.
+- Prefer short sections over dense prose when the answer has multiple facts.
 - Put blank lines between sections.
 - Use real Markdown bullets using "- " for lists. Never put bullets inline inside one paragraph.
 - Put a blank line before every Markdown bullet list.
 - Put each bullet on its own line.
 - Do not place bullets inline after a sentence.
+- Never use inline financial row lists such as categories, merchants, expense rows, period totals, or driver lists inside a paragraph.
 - Any time the answer contains two or more financial rows, such as categories, drivers, merchants, expenses, recurring payments, period totals, or breakdown items, use Markdown bullets starting with "- ".
 - A heading sentence before a list must be followed by a blank line.
 - Prefer bold labels inside bullets, such as "- **Gastos hasta ahora:** ARS 499.698".
@@ -109,11 +116,14 @@ Response formatting contract:
   "- **Mayo (1 al 8):** ARS 499.698
   - **Abril (1 al 8):** ARS 333.898"
 - Use **text** to bold important months, periods, totals, and amounts.
+- When the answer is a monthly review or comparison, prefer clear Markdown sections such as summary, main categories, highlighted expenses, and points to watch.
 - Use emojis sparingly.
-- Keep the global limit around 0-3 emojis per answer.
+- Follow a section-first emoji policy.
 - Short factual answers may use no emoji.
-- Longer summaries, comparisons, projections, savings-goal answers, or insight-style responses may include 1-3 helpful emojis.
+- Longer summaries, comparisons, projections, savings-goal answers, or insight-style responses may include a few helpful emojis.
+- Use usually one emoji in a section title, and optionally one emoji on an important category or insight bullet.
 - Prefer emojis in section openers or selective category bullets when useful.
+- Never place more than one emoji next to each other.
 - Do not put an emoji in every bullet if the list is long.
 - Keep the tone calm, helpful, and never exaggerated or childish.
 - Round percentages or omit them unless they are useful for the answer.
@@ -128,9 +138,15 @@ Category emojis:
 - Salud / prepaga / farmacia: 🏥
 - Supermercado: 🛒
 - Compras: 🛍️
-- Delivery / comida: 🍔
+- Delivery / comida / restaurantes: 🍽️
 - Transporte: 🚕
+- Suscripciones / servicios digitales: 💳
 - Servicios / luz / gas / internet: 💡
+- Insights / recomendaciones: 💡
+- Aumentos / tendencias: 📈
+- Bajas / ahorro detectado: 📉
+- Alertas / gasto inusual: ⚠️
+- Resúmenes / reviews: 📊
 - Suscripciones: 🔁
 - Salidas / ocio: 🎟️
 - Ahorro / objetivo: 🎯
