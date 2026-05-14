@@ -15,7 +15,7 @@ const FORECAST_PATTERNS = [
   /\ba este ritmo\b/i,
   /\bfin de mes\b/i,
   /\bproyecci[oó]n\b/i,
-  /\bproyect(?:a|á|ar)\b/i,
+  /proyect/i,
   /\bpredicci[oó]n\b/i,
   /\bpredec(?:i|í)\b/i,
   /\bc[oó]mo cierro (?:el )?mes\b/i,

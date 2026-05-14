@@ -33,6 +33,11 @@ test('monthly review intent detects month-to-month comparisons without requiring
   assert.equal(detectGastiWorkflowIntent('Comparame mayo contra abril'), 'monthly_review');
 });
 
+test('forecast prompts route to agent instead of monthly review', () => {
+  assert.equal(isMonthlyFinancialReviewIntent('Proyectá mi gasto de este mes'), false);
+  assert.equal(detectGastiWorkflowIntent('Proyectá mi gasto de este mes'), 'agent');
+});
+
 test('greeting workflow produces a short snapshot with at most two insights and one emoji', async () => {
   const result = await runGreetingFinancialSnapshotWorkflow(
     { message: 'Hola', currentDate: '2026-05-13' },
