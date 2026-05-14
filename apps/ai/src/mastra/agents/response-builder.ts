@@ -23,7 +23,8 @@ export type GastiStructuredResponse = z.infer<typeof gastiStructuredResponseSche
 
 const GENERIC_GASTI_RESPONSE_FALLBACK = 'No pude armar una respuesta confiable con los datos disponibles.';
 const HEADING_KINDS = new Set<GastiResponseKind>(['financial_insight', 'comparison', 'breakdown']);
-const INLINE_BULLET_MARKER_PATTERN = /(^|\s)([*-]) (?=\S)/g;
+const INLINE_BULLET_MARKER_PATTERN = /(^|\s)([*+-])\s+(?=\S)/g;
+const UNORDERED_LIST_LINE_PATTERN = /^\s*[*+-]\s+(\S.*)$/;
 
 function normalizeOptionalString(value: unknown): string | undefined {
   if (typeof value !== 'string') {
@@ -93,7 +94,7 @@ function normalizeInlineBulletSection(section: string): string {
   const recovered = recoverInlineBulletRun(section);
 
   if (!recovered) {
-    return section.trim();
+    return normalizeLineStartBulletBlocks(section);
   }
 
   const listBlock = recovered.items.map((item) => `- ${item}`).join('\n');
@@ -102,7 +103,57 @@ function normalizeInlineBulletSection(section: string): string {
     return listBlock;
   }
 
-  return `${recovered.leadingText}\n\n${listBlock}`;
+  return normalizeLineStartBulletBlocks(`${recovered.leadingText}\n\n${listBlock}`);
+}
+
+function normalizeLineStartBulletBlocks(section: string): string {
+  const blocks: string[] = [];
+  const paragraphLines: string[] = [];
+  const listItems: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) {
+      return;
+    }
+
+    blocks.push(paragraphLines.join('\n'));
+    paragraphLines.length = 0;
+  };
+
+  const flushList = () => {
+    if (listItems.length === 0) {
+      return;
+    }
+
+    blocks.push(listItems.map((item) => `- ${item}`).join('\n'));
+    listItems.length = 0;
+  };
+
+  for (const rawLine of section.trim().split('\n')) {
+    const line = rawLine.trim();
+
+    if (!line) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const listMatch = line.match(UNORDERED_LIST_LINE_PATTERN);
+
+    if (listMatch) {
+      flushParagraph();
+      listItems.push(listMatch[1]);
+      continue;
+    }
+
+    flushList();
+    paragraphLines.push(line);
+  }
+
+  flushParagraph();
+  flushList();
+
+  return blocks.join('\n\n');
 }
 
 function normalizeMarkdownListText(value: string): string {
@@ -129,7 +180,9 @@ function normalizeMarkdownBulletItems(values: readonly string[] | undefined): st
 
     if (!recovered) {
       const trimmed = value.trim();
-      return trimmed ? [trimmed] : [];
+      const listMatch = trimmed.match(UNORDERED_LIST_LINE_PATTERN);
+      const normalized = listMatch ? listMatch[1] : trimmed;
+      return normalized ? [normalized] : [];
     }
 
     if (recovered.leadingText) {

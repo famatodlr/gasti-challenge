@@ -404,6 +404,60 @@ test('ChatService streams workflow activity as valid chat events', async () => {
   }
 });
 
+test('ChatService normalizes workflow answers before returning and emitting final_answer events', async () => {
+  const restoreEnv = useTestAiEnv();
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const workflowAnswer = [
+      'Tus principales gastos fueron:',
+      '*   **Vivienda**: ARS 250.000',
+      '+   **Compras**: ARS 45.000',
+    ].join('\n');
+    const normalizedWorkflowAnswer = [
+      'Tus principales gastos fueron:',
+      '',
+      '- **Vivienda**: ARS 250.000',
+      '- **Compras**: ARS 45.000',
+    ].join('\n');
+    const service = new ChatService(
+      {
+        generate: async () => {
+          throw new Error('agent should not be called');
+        },
+        stream: async () => {
+          throw new Error('agent stream should not be called');
+        },
+      },
+      {
+        runMonthlyReview: async () => ({
+          answer: workflowAnswer,
+          activityLabels: ['Detectando período', 'Armando respuesta'],
+        }),
+        runGreetingSnapshot: async () => {
+          throw new Error('greeting workflow should not be called');
+        },
+      },
+    );
+
+    const response = await service.answerWithSteps(memoryChatRequest(userConversation('Resumen de mayo 2026')));
+    assert.equal(response.answer, normalizedWorkflowAnswer);
+    assert.equal(response.steps?.at(-1)?.answer, normalizedWorkflowAnswer);
+
+    const events = [];
+
+    for await (const event of service.streamAnswerEvents(memoryChatRequest(userConversation('Resumen de mayo 2026')))) {
+      events.push(event);
+    }
+
+    assert.equal(events.at(-1)?.type, 'final_answer');
+    assert.equal(events.at(-1)?.answer, normalizedWorkflowAnswer);
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
 test('ChatService includes workflow fallback activity labels in step metadata', async () => {
   const restoreEnv = useTestAiEnv();
   const restoreLoggerLog = silenceInfoLogs();

@@ -191,6 +191,47 @@ test('fallback normalizes obvious inline bullet runs without rewriting a single 
   );
 });
 
+test('fallback normalizes line-start asterisk bullets to dash bullets', () => {
+  assert.equal(
+    buildSafeGastiResponseFallback(
+      ['Tus principales gastos fueron:', '*   **Vivienda**: ARS 250.000', '*   **Salud**: ARS 83.900'].join('\n'),
+    ),
+    ['Tus principales gastos fueron:', '', '- **Vivienda**: ARS 250.000', '- **Salud**: ARS 83.900'].join('\n'),
+  );
+});
+
+test('fallback normalizes line-start plus bullets to dash bullets', () => {
+  assert.equal(
+    buildSafeGastiResponseFallback(['Tus principales gastos fueron:', '+   Compras: ARS 45.000'].join('\n')),
+    ['Tus principales gastos fueron:', '', '- Compras: ARS 45.000'].join('\n'),
+  );
+});
+
+test('fallback keeps paragraph emphasis unchanged when normalizing line-start bullets', () => {
+  assert.equal(
+    buildSafeGastiResponseFallback('Esto es *importante* para entender el gasto.'),
+    'Esto es *importante* para entender el gasto.',
+  );
+});
+
+test('structured markdown output does not leave list lines starting with asterisk or plus markers', () => {
+  const response = normalizeGastiStructuredResponse({
+    kind: 'breakdown',
+    summary: ['Tus principales gastos fueron:', '*   **Vivienda**: ARS 250.000', '+   **Compras**: ARS 45.000'].join(
+      '\n',
+    ),
+  });
+
+  assert.ok(response);
+  const markdown = buildGastiResponseMarkdown(response);
+
+  assert.equal(
+    markdown,
+    ['Tus principales gastos fueron:', '', '- **Vivienda**: ARS 250.000', '- **Compras**: ARS 45.000'].join('\n'),
+  );
+  assert.doesNotMatch(markdown, /^\*|\n\*|\n\+/m);
+});
+
 test('falls back safely for invalid structured content', () => {
   assert.equal(
     normalizeGastiStructuredResponse({

@@ -358,6 +358,10 @@ function resolveFinalAnswerText(result: AgentGenerateResult): string | null {
   return hasStructuredAttempt ? buildSafeGastiResponseFallback() : null;
 }
 
+function normalizePublicAnswer(answer: string): string {
+  return buildSafeGastiResponseFallback(answer);
+}
+
 function createActivityEvent(
   type: ChatActivityEvent['type'],
   label: string,
@@ -617,14 +621,15 @@ export class ChatService {
     try {
       if (workflowIntent !== 'agent') {
         const workflowResult = await this.runWorkflow(workflowIntent, lastMessage?.content ?? '');
+        const answer = normalizePublicAnswer(workflowResult.answer);
 
         for (const label of workflowResult.activityLabels) {
           activity.addStatus(label);
         }
 
-        activity.addFinalAnswer(workflowResult.answer);
+        activity.addFinalAnswer(answer);
 
-        return { answer: workflowResult.answer, steps: activity.collectedEvents };
+        return { answer, steps: activity.collectedEvents };
       }
 
       const answer = await this.generateAnswerWithModelFallback(
@@ -712,12 +717,13 @@ export class ChatService {
     try {
       if (workflowIntent !== 'agent') {
         const workflowResult = await this.runWorkflow(workflowIntent, lastMessage?.content ?? '');
+        const answer = normalizePublicAnswer(workflowResult.answer);
 
         for (const label of workflowResult.activityLabels) {
           yield createActivityEvent('status', label);
         }
 
-        yield createActivityEvent('final_answer', ACTIVITY_FINAL_ANSWER_LABEL, { answer: workflowResult.answer });
+        yield createActivityEvent('final_answer', ACTIVITY_FINAL_ANSWER_LABEL, { answer });
         return;
       }
 
@@ -1210,7 +1216,7 @@ export class ChatService {
       }
     }
 
-    const finalAnswer = buildSafeGastiResponseFallback(answer);
+    const finalAnswer = normalizePublicAnswer(answer);
     const generation = buildAgentGenerationMetadata({ text: finalAnswer }, messages, modelId);
 
     if (!finalAnswer.trim()) {

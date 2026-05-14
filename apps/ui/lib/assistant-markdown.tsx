@@ -10,30 +10,62 @@ export type AssistantMarkdownBlock =
       items: string[];
     };
 
+const UNORDERED_LIST_ITEM_PATTERN = /^[-*+]\s+(\S.*)$/;
+
 export function parseAssistantMarkdown(content: string): AssistantMarkdownBlock[] {
-  return content
-    .replace(/\r\n/g, '\n')
-    .split(/\n{2,}/)
-    .map((section) => section.trim())
-    .filter(Boolean)
-    .map((section) => {
-      const lines = section
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
+  const blocks: AssistantMarkdownBlock[] = [];
+  const paragraphLines: string[] = [];
+  const listItems: string[] = [];
 
-      if (lines.length > 0 && lines.every((line) => line.startsWith('- '))) {
-        return {
-          kind: 'list',
-          items: lines.map((line) => line.slice(2).trim()),
-        };
-      }
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) {
+      return;
+    }
 
-      return {
-        kind: 'paragraph',
-        text: section,
-      };
+    blocks.push({
+      kind: 'paragraph',
+      text: paragraphLines.join('\n'),
     });
+    paragraphLines.length = 0;
+  };
+
+  const flushList = () => {
+    if (listItems.length === 0) {
+      return;
+    }
+
+    blocks.push({
+      kind: 'list',
+      items: [...listItems],
+    });
+    listItems.length = 0;
+  };
+
+  for (const rawLine of content.replace(/\r\n/g, '\n').split('\n')) {
+    const line = rawLine.trim();
+
+    if (!line) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const listMatch = line.match(UNORDERED_LIST_ITEM_PATTERN);
+
+    if (listMatch) {
+      flushParagraph();
+      listItems.push(listMatch[1]);
+      continue;
+    }
+
+    flushList();
+    paragraphLines.push(line);
+  }
+
+  flushParagraph();
+  flushList();
+
+  return blocks;
 }
 
 function renderInlineStrong(text: string): ReactNode[] {
