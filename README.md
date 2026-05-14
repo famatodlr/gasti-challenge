@@ -118,7 +118,7 @@ Si los tests de memoria fallan por datos persistidos de una demo anterior, se pu
 
 bun run demo:reset-memory
 
-Hay un checklist final en docs/final-checklist.md.
+Hay un checklist final en [docs/final-checklist.md].
 ## Qué dejaría para después
 
 - Multiusuario real con aislamiento de memoria y contexto.
