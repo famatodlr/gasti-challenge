@@ -7,6 +7,7 @@ import {
   getBackendChatUrl,
   isRecord,
   jsonError,
+  normalizeAnswerUi,
   normalizeActivityEvents,
   normalizeChatPayload,
 } from './shared';
@@ -44,8 +45,9 @@ export async function POST(request: Request) {
     }
 
     const steps = normalizeActivityEvents(backendBody.steps);
+    const answerUi = normalizeAnswerUi(backendBody.answerUi);
 
-    return NextResponse.json({ answer: backendBody.answer, ...(steps ? { steps } : {}) });
+    return NextResponse.json({ answer: backendBody.answer, ...(steps ? { steps } : {}), ...(answerUi ? { answerUi } : {}) });
   } catch {
     return jsonError(GENERIC_CHAT_ERROR, 502);
   }

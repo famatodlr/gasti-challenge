@@ -34,6 +34,7 @@ export type ChatActivityEvent = {
   toolName?: string;
   timestamp?: string;
   answer?: string;
+  answerUi?: unknown;
 };
 
 const SUPPORTED_CHAT_ROLES = new Set<ChatRole>(['user', 'assistant']);
@@ -162,6 +163,10 @@ function normalizeActivityEvent(value: unknown): ChatActivityEvent | null {
     event.answer = value.answer;
   }
 
+  if (Object.prototype.hasOwnProperty.call(value, 'answerUi')) {
+    event.answerUi = value.answerUi;
+  }
+
   return event;
 }
 
@@ -181,6 +186,18 @@ export function normalizeActivityEvents(value: unknown): ChatActivityEvent[] | u
   }
 
   return events as ChatActivityEvent[];
+}
+
+export function normalizeAnswerUi(value: unknown): unknown | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+
+  return value;
 }
 
 export function getBackendChatUrl(): string {

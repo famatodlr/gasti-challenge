@@ -2,21 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg-base: #0e1113;
+  --bg-elevated: #13171a;
+  --bg-subtle: #181d21;
+  --surface-1: #13171a;
+  --surface-2: #181d21;
+  --surface-3: #1d2328;
+  --text-primary: #f2f1ec;
+  --text-secondary: #d7d6cf;
+  --text-muted: #a5a7ab;
+  --text-dim: #8a8f96;
+  --border-subtle: rgba(242, 241, 236, 0.08);
+  --border-soft: rgba(242, 241, 236, 0.12);
+  --accent-primary: #a7c96b;
+  --accent-hover: #b6d77a;
+  --accent-active: #95b85d;
+  --accent-ink: #1d2a11;
+  --state-active: #88a5c9;
+  --state-success: #95b87a;
+  --state-warning: #be9f72;
+  --state-error: #b88389;
+  --ring-focus: rgba(167, 201, 107, 0.22);
+  --shadow-lg: 0 24px 80px rgba(0, 0, 0, 0.34);
+  --shadow-md: 0 12px 42px rgba(0, 0, 0, 0.24);
+}
+
 * {
   box-sizing: border-box;
 }
 
 html {
-  background: #050706;
+  background:
+    radial-gradient(1200px 520px at 12% -20%, rgba(167, 201, 107, 0.06), transparent 62%),
+    radial-gradient(1000px 460px at 90% -20%, rgba(111, 124, 139, 0.18), transparent 65%),
+    var(--bg-base);
   color-scheme: dark;
 }
 
 body {
   min-height: 100vh;
   margin: 0;
-  background: #050706;
+  background: transparent;
   overflow-x: hidden;
-  -webkit-tap-highlight-color: rgba(163, 230, 53, 0.12);
+  -webkit-tap-highlight-color: rgba(167, 201, 107, 0.18);
+  color: var(--text-primary);
 }
 
 button,
