@@ -109,6 +109,7 @@ test('monthly review workflow answer uses real Markdown bullets for breakdown ro
   assert.match(result.answer, /\n- 🏠 \*\*Vivienda:\*\* ARS 250\.000/);
   assert.match(result.answer, /\n- \*\*Propietario:\*\* ARS 250\.000/);
   assert.doesNotMatch(result.answer, /(?:^|\n)\*\*[^*\n]+:\*\* ARS/m);
+  assert.doesNotMatch(result.answer, /¿Querés que te compare categoría por categoría contra el período anterior\?/);
 });
 
 test('monthly review workflow deterministic answer avoids pointing finger emojis in insight bullets', async () => {

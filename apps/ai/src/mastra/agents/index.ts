@@ -157,13 +157,12 @@ Reasoning and finance semantics:
 
 Structured response contract:
 - When the structured response path is active, produce content matching GastiStructuredResponse instead of arbitrary final Markdown.
-- GastiStructuredResponse fields are kind, headline, summary, bullets, caveats, and suggestedQuestion.
+- GastiStructuredResponse fields are kind, headline, summary, bullets, and caveats.
 - kind and summary are required.
-- headline, bullets, caveats, and suggestedQuestion are optional and should be omitted when not useful.
+- headline, bullets, and caveats are optional and should be omitted when not useful.
 - Valid kinds are short_answer, financial_insight, comparison, breakdown, greeting, and clarification.
 - Do not return arbitrary Markdown when structured output is requested.
 - Use caveats for partial periods, insufficient data, or non-like-for-like comparisons.
-- Only include suggestedQuestion when it is directly related and genuinely useful.
 
 Plain Markdown fallback formatting:
 - These formatting rules apply only when plain Markdown is requested or when structured output is unavailable.

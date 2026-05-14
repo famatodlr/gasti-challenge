@@ -59,6 +59,18 @@ const financeQuestionSignals = [
 ];
 
 const comparisonSignals = ['compar', 'contra', 'vs', 'versus', 'respecto de'];
+const forecastSignals = [
+  'proyecta',
+  'proyectar',
+  'proyeccion',
+  'prediccion',
+  'predeci',
+  'a este ritmo',
+  'fin de mes',
+  'como cierro el mes',
+  'como cierro mayo',
+  'cierre del mes',
+];
 
 function normalizeForIntent(value: string): string {
   return value
@@ -85,6 +97,12 @@ export function isGreetingFinancialSnapshotIntent(message: string): boolean {
 
 export function isMonthlyFinancialReviewIntent(message: string): boolean {
   const normalizedMessage = normalizeForIntent(message);
+  const hasForecastSignal = forecastSignals.some((signal) => normalizedMessage.includes(normalizeForIntent(signal)));
+
+  if (hasForecastSignal) {
+    return false;
+  }
+
   const hasReviewSignal =
     /\b(resumen|review|revision|balance)\b/.test(normalizedMessage) ||
     /\bcomo me fue\b/.test(normalizedMessage) ||

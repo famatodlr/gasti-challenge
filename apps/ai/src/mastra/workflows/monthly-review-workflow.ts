@@ -280,7 +280,6 @@ export function buildDeterministicMonthlyReviewAnswer({
     expenseBullets.join('\n'),
     '### Puntos para mirar 👀',
     insightBullets.length > 0 ? insightBullets.join('\n') : '- **Movimiento:** No aparece un cambio fuerte con los datos disponibles.',
-    '¿Querés que te compare categoría por categoría contra el período anterior?',
   ].join('\n\n');
 }
 
@@ -496,9 +495,9 @@ export function detectMonthlyReviewInsights({
     insights.push({
       type: 'spending_pace',
       title: 'Ritmo del mes',
-      detail: `si el ritmo variable se mantiene, el cierre proyectado ronda ${formatARS(
+      detail: `proyección: si el ritmo variable se mantiene, el cierre del mes rondaría ${formatARS(
         forecast.projectedMonthEndSpend,
-      )}.`,
+      )}. (no es gasto observado todavía)`,
       severity: forecast.projectedMonthEndSpend >= 1_000_000 ? 'high' : 'medium',
     });
   }

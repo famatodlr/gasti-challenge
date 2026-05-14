@@ -332,7 +332,6 @@ export default function Page() {
                           <AssistantMessageCard
                             content={message.content}
                             answerUi={message.answerUi}
-                            onSuggestedQuestionClick={(question) => void sendMessage(question)}
                           />
                         )}
                       </div>

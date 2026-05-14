@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
   AssistantMarkdown,
-  inferSuggestedQuestion,
   normalizeAnswerUi,
   parseAssistantMarkdown,
 } from './assistant-markdown';
@@ -35,11 +34,6 @@ test('AssistantMarkdown renders clean bullet rows and safe text escaping', () =>
 test('normalizeAnswerUi accepts supported optional fields', () => {
   assert.deepEqual(
     normalizeAnswerUi({ title: 'Resumen', body: 'Hola', highlights: ['Uno'], caveat: 'Ojo', suggestedQuestion: 'Seguimos?' }),
-    { headline: 'Resumen', summary: 'Hola', bullets: ['Uno'], note: 'Ojo', suggestedQuestion: 'Seguimos?' },
+    { headline: 'Resumen', summary: 'Hola', bullets: ['Uno'], note: 'Ojo' },
   );
-});
-
-test('inferSuggestedQuestion returns only safe final questions', () => {
-  assert.equal(inferSuggestedQuestion('Texto\n\n¿Querés que te arme un plan para junio?'), '¿Querés que te arme un plan para junio?');
-  assert.equal(inferSuggestedQuestion('Texto final sin pregunta.'), null);
 });

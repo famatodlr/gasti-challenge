@@ -1018,7 +1018,6 @@ test('ChatService renders structured output into final Markdown text in the publ
           summary: 'Hasta el 13/05 gastaste **ARS 499.698**.',
           bullets: ['Delivery fue el principal driver de la suba.', 'Salud también aumentó.'],
           caveats: ['Mayo todavía está incompleto.'],
-          suggestedQuestion: '¿Querés ver qué comercios explican más la suba?',
         },
         finishReason: 'stop',
       }),
@@ -1037,8 +1036,6 @@ test('ChatService renders structured output into final Markdown text in the publ
         '- Salud también aumentó.',
         '',
         '_Nota: Mayo todavía está incompleto._',
-        '',
-        '¿Querés ver qué comercios explican más la suba?',
       ].join('\n'),
     );
     assert.equal(response.answer.includes('"kind"'), false);

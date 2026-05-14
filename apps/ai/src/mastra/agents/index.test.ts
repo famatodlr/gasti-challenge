@@ -108,7 +108,7 @@ test('Gasti agent instructions define the structured response contract', () => {
   assert.match(GASTI_AGENT_INSTRUCTIONS, /summary.*required/i);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /Do not return arbitrary Markdown when structured output is requested/i);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /Use caveats for partial periods/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Only include suggestedQuestion/i);
+  assert.doesNotMatch(GASTI_AGENT_INSTRUCTIONS, /suggestedQuestion/i);
 });
 
 test('grounding addendum requires finance context for dataset availability questions', () => {

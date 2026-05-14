@@ -20,7 +20,7 @@ test('renders a short answer with only summary', () => {
   );
 });
 
-test('renders a comparison with headline, summary, bullets, caveats, and suggested question', () => {
+test('renders a comparison with headline, summary, bullets, and caveats', () => {
   const response = normalizeGastiStructuredResponse({
     kind: 'comparison',
     headline: 'Mayo viene más alto que abril',
@@ -31,7 +31,6 @@ test('renders a comparison with headline, summary, bullets, caveats, and suggest
       'Transporte se mantuvo relativamente estable.',
     ],
     caveats: ['Mayo todavía está incompleto.'],
-    suggestedQuestion: '¿Querés ver qué comercios explican más la suba?',
   });
 
   assert.ok(response);
@@ -47,13 +46,11 @@ test('renders a comparison with headline, summary, bullets, caveats, and suggest
       '- Transporte se mantuvo relativamente estable.',
       '',
       '_Nota: Mayo todavía está incompleto._',
-      '',
-      '¿Querés ver qué comercios explican más la suba?',
     ].join('\n'),
   );
 });
 
-test('renders a greeting with summary, bullets, and suggested question', () => {
+test('renders a greeting with summary and bullets', () => {
   const response = normalizeGastiStructuredResponse({
     kind: 'greeting',
     summary: '¡Buenas! Mayo viene un poco más alto que tu ritmo habitual.',
@@ -61,7 +58,6 @@ test('renders a greeting with summary, bullets, and suggested question', () => {
       'Delivery está empujando la suba.',
       'Todavía estás a tiempo de ajustar el resto del mes.',
     ],
-    suggestedQuestion: '¿Querés que te muestre en qué se fue más plata este mes?',
   });
 
   assert.ok(response);
@@ -72,8 +68,6 @@ test('renders a greeting with summary, bullets, and suggested question', () => {
       '',
       '- Delivery está empujando la suba.',
       '- Todavía estás a tiempo de ajustar el resto del mes.',
-      '',
-      '¿Querés que te muestre en qué se fue más plata este mes?',
     ].join('\n'),
   );
 });
@@ -85,7 +79,6 @@ test('trims whitespace and drops empty bullets and caveats', () => {
     summary: '  Subió frente al período anterior.  ',
     bullets: ['  Rappi explicó la mayor parte. ', ' ', '\n'],
     caveats: ['  Mayo está incompleto. ', '', '   '],
-    suggestedQuestion: '  ¿Querés ver el detalle por comercio?  ',
   });
 
   assert.deepEqual(response, {
@@ -94,7 +87,6 @@ test('trims whitespace and drops empty bullets and caveats', () => {
     summary: 'Subió frente al período anterior.',
     bullets: ['Rappi explicó la mayor parte.'],
     caveats: ['Mayo está incompleto.'],
-    suggestedQuestion: '¿Querés ver el detalle por comercio?',
   });
 });
 
@@ -105,7 +97,6 @@ test('does not render empty sections', () => {
     summary: 'Acá va el resumen.',
     bullets: [],
     caveats: [],
-    suggestedQuestion: '   ',
   });
 
   assert.ok(response);
