@@ -17,6 +17,7 @@ import {
   gastiConversationMemory,
   type GastiConversationMemoryContext,
 } from './conversation-memory.ts';
+import { buildFinanceGroundingPolicy, type FinanceGroundingPolicy } from './finance-grounding-policy.ts';
 import { getGastiModelId, getGeminiApiKey } from './model.ts';
 export {
   buildGastiResponseMarkdown,
@@ -68,6 +69,11 @@ type GenerateGastiFinanceAgentResult = {
   text: string;
 };
 
+type GroundingPreparationResult = {
+  messages: string | GastiFinanceAgentMessage[];
+  policy: FinanceGroundingPolicy;
+};
+
 const google = createGoogleGenerativeAI({
   apiKey: getGeminiApiKey(),
 });
@@ -102,6 +108,8 @@ Tool use:
 - For concrete finance questions about spend, merchants, categories, transactions, recurring expenses, comparisons, or projections, call the relevant finance tool before making factual claims.
 - For dataset availability, coverage windows, relative dates, broad questions without a date range, follow-ups with ambiguous dates, or a month without a year, call getFinanceContext first.
 - If the user mentions a month without a year, use getFinanceContext and resolve it to the latest matching available month when unambiguous. If ambiguous, ask for clarification.
+- Only current-turn evidence counts for dataset coverage or period availability claims: finance tool results returned in this turn and getFinanceContext metadata returned in this turn.
+- Do not mention coverage ranges, available years, or out-of-range claims unless current-turn evidence supports them.
 - Do not say transaction data is unavailable unless getFinanceContext or a finance tool result supports that claim.
 - Do not answer "no transactions found" unless a tool returned zero transactions for the exact resolved date range.
 
@@ -177,6 +185,110 @@ export const financeTools = {
   updateFinancialMemory: updateFinancialMemoryTool,
 };
 
+function getLastUserMessageContent(messages: string | GastiFinanceAgentMessage[]): string {
+  if (typeof messages === 'string') {
+    return messages;
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+
+    if (message.role === 'user') {
+      return message.content;
+    }
+  }
+
+  return messages.at(-1)?.content ?? '';
+}
+
+export function buildGastiFinanceGroundingAddendum(policy: FinanceGroundingPolicy): string | null {
+  if (!policy.requiresGrounding) {
+    return null;
+  }
+
+  const addendumLines = [
+    '[Internal grounding requirements]',
+    '- Use current-turn evidence before making financial claims.',
+    '- Current-turn evidence means finance tool outputs returned in this turn and getFinanceContext metadata returned in this turn.',
+    '- Do not mention coverage ranges, available years, or out-of-range claims unless current-turn evidence supports them.',
+    `- Use one of these acceptable finance tools before factual claims: ${policy.acceptableFinanceTools.join(', ')}.`,
+  ];
+
+  if (policy.requiresFinanceContext) {
+    addendumLines.push('- Call getFinanceContext first before answering this request.');
+  }
+
+  if (policy.mustResolveBareMonthFromContext) {
+    addendumLines.push('- The user mentioned a month without a year, so resolve that month through getFinanceContext before answering.');
+  }
+
+  if (policy.incomeClaimsForbiddenWithoutEvidence) {
+    addendumLines.push('- Do not infer income, salary, savings rate, or similar income-derived conclusions without current-turn evidence.');
+  }
+
+  return addendumLines.join('\n');
+}
+
+function appendGroundingAddendumToMessages(
+  messages: string | GastiFinanceAgentMessage[],
+  addendum: string,
+): string | GastiFinanceAgentMessage[] {
+  if (typeof messages === 'string') {
+    return [{ role: 'user', content: `${messages}\n\n${addendum}` }];
+  }
+
+  const clonedMessages = messages.map((message) => ({ ...message }));
+
+  for (let index = clonedMessages.length - 1; index >= 0; index -= 1) {
+    const message = clonedMessages[index];
+
+    if (message.role === 'user') {
+      clonedMessages[index] = {
+        ...message,
+        content: `${message.content}\n\n${addendum}`,
+      };
+
+      return clonedMessages;
+    }
+  }
+
+  return [...clonedMessages, { role: 'user', content: addendum }];
+}
+
+export function prepareGastiFinanceAgentMessages(
+  messages: string | GastiFinanceAgentMessage[],
+): GroundingPreparationResult {
+  const policy = buildFinanceGroundingPolicy(getLastUserMessageContent(messages));
+  const addendum = buildGastiFinanceGroundingAddendum(policy);
+
+  if (!addendum) {
+    return { messages, policy };
+  }
+
+  return {
+    messages: appendGroundingAddendumToMessages(messages, addendum),
+    policy,
+  };
+}
+
+function logFinanceGroundingPolicy(policy: FinanceGroundingPolicy, messages: string | GastiFinanceAgentMessage[]): void {
+  console.info({
+    event: 'gasti.finance_grounding_policy',
+    questionType: policy.questionType,
+    requiresGrounding: policy.requiresGrounding,
+    requiresFinanceContext: policy.requiresFinanceContext,
+    acceptableFinanceTools: policy.acceptableFinanceTools,
+    bareMonthDetected: policy.bareMonthDetected,
+    mustResolveBareMonthFromContext: policy.mustResolveBareMonthFromContext,
+    coverageClaimsForbiddenWithoutEvidence: policy.coverageClaimsForbiddenWithoutEvidence,
+    incomeClaimsForbiddenWithoutEvidence: policy.incomeClaimsForbiddenWithoutEvidence,
+    currentTurnEvidenceRequired: policy.currentTurnEvidenceRequired,
+    inputShape: typeof messages === 'string' ? 'string' : 'message_array',
+    messageCount: typeof messages === 'string' ? 1 : messages.length,
+    lastUserMessageLength: getLastUserMessageContent(messages).length,
+  });
+}
+
 export const gastiFinanceAgent = new Agent({
   name: 'Gasti',
   instructions: GASTI_AGENT_INSTRUCTIONS,
@@ -203,7 +315,10 @@ export async function generateGastiFinanceAgent(
     runtimeContext.set(GASTI_MODEL_RUNTIME_CONTEXT_KEY, trimmedModelId);
   }
 
-  return await gastiFinanceAgent.generate(messages, {
+  const prepared = prepareGastiFinanceAgentMessages(messages);
+  logFinanceGroundingPolicy(prepared.policy, messages);
+
+  return await gastiFinanceAgent.generate(prepared.messages, {
     maxSteps,
     ...(memoryContext ? { memory: memoryContext } : {}),
     runtimeContext,
@@ -224,7 +339,10 @@ export async function streamGastiFinanceAgent(
     runtimeContext.set(GASTI_MODEL_RUNTIME_CONTEXT_KEY, trimmedModelId);
   }
 
-  return await gastiFinanceAgent.stream(messages, {
+  const prepared = prepareGastiFinanceAgentMessages(messages);
+  logFinanceGroundingPolicy(prepared.policy, messages);
+
+  return await gastiFinanceAgent.stream(prepared.messages, {
     maxSteps,
     ...(memoryContext ? { memory: memoryContext } : {}),
     runtimeContext,

@@ -41,6 +41,7 @@ type AgentMemoryContext = {
 
 type AgentGenerateOptions = {
   disableMemory?: boolean;
+  experimental_output?: unknown;
   maxSteps?: number;
   memory?: AgentMemoryContext;
   modelId?: string;

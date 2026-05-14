@@ -229,6 +229,48 @@ test('April questions can resolve to the dataset year from finance context', asy
   assert.notEqual(aprilSummary.total, 0);
 });
 
+test('May 2026 exists in dataset metadata and Netflix has matching transactions in that period', async () => {
+  const financeContext = getFinanceContextTool.outputSchema.parse(await executeTool(getFinanceContextTool, {}));
+  const may = financeContext.availableMonths.find((month) => month.label === 'mayo de 2026');
+
+  assert.ok(may);
+  assert.equal(financeContext.availableDateRange.to, '2026-05-08');
+
+  const mayNetflixTransactions = findTransactionsTool.outputSchema.parse(
+    await executeTool(findTransactionsTool, {
+      from: may.from,
+      to: financeContext.availableDateRange.to,
+      query: 'Netflix',
+      sortBy: 'date_desc',
+      limit: 10,
+    }),
+  );
+
+  assert.equal(mayNetflixTransactions.period.from, '2026-05-01');
+  assert.equal(mayNetflixTransactions.period.to, '2026-05-08');
+  assert.equal(mayNetflixTransactions.periodMeta.completeness, 'partial');
+  assert.equal(mayNetflixTransactions.periodMeta.partialReason, 'latest_dataset_month_to_date');
+  assert.ok(mayNetflixTransactions.transactionCount > 0);
+  assert.ok(mayNetflixTransactions.transactions.every((transaction) => transaction.date.startsWith('2026-05')));
+});
+
+test('zero-match transaction searches stay grounded in the requested 2026 range', async () => {
+  const noMatches = findTransactionsTool.outputSchema.parse(
+    await executeTool(findTransactionsTool, {
+      from: '2026-05-01',
+      to: '2026-05-08',
+      query: 'MerchantThatDoesNotExist',
+      sortBy: 'date_desc',
+      limit: 10,
+    }),
+  );
+
+  assert.deepEqual(noMatches.period, { from: '2026-05-01', to: '2026-05-08' });
+  assert.equal(noMatches.transactionCount, 0);
+  assert.equal(noMatches.summary.transactionCount, 0);
+  assert.equal(noMatches.transactions.length, 0);
+});
+
 test('single-range finance tools require strict top-level date inputs', () => {
   assert.throws(() =>
     spendingSummaryTool.inputSchema.parse({
