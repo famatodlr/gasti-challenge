@@ -1201,6 +1201,52 @@ test('ChatService emits a Spanish warning before retrying invalid tool arguments
   }
 });
 
+test('ChatService normalizes streamed raw final answers with inline bullet runs before final emission', async () => {
+  const restoreEnv = useTestAiEnv({ GASTI_AI_MODEL: 'gemini-fixed' });
+  const restoreLoggerLog = silenceInfoLogs();
+
+  try {
+    const service = new ChatService({
+      generate: async () => {
+        throw new Error('generate should not be called by streamAnswerEvents');
+      },
+      stream: async () => ({
+        fullStream: streamChunks([
+          {
+            type: 'text-delta',
+            textDelta:
+              'En mayo de 2026, gastaste un total de **ARS 499.698**. Aquí tenés un resumen por categoría: * **Vivienda:** ARS 250.000 * **Salud:** ARS 83.900',
+          },
+        ]),
+      }),
+    } as never);
+
+    const events = [];
+
+    for await (const event of service.streamAnswerEvents(memoryChatRequest(userConversation('¿Cuánto gasté en mayo de 2026?')))) {
+      events.push(event);
+    }
+
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ['status', 'status', 'final_answer'],
+    );
+    assert.equal(
+      events.at(-1)?.answer,
+      [
+        'En mayo de 2026, gastaste un total de **ARS 499.698**. Aquí tenés un resumen por categoría:',
+        '',
+        '- **Vivienda:** ARS 250.000',
+        '- **Salud:** ARS 83.900',
+      ].join('\n'),
+    );
+    assert.equal(events.at(-1)?.answer?.includes('* **Vivienda:** ARS 250.000 * **Salud:** ARS 83.900'), false);
+  } finally {
+    restoreLoggerLog();
+    restoreEnv();
+  }
+});
+
 test('ChatService falls back after an empty agent answer and logs safe metadata', async () => {
   const restoreEnv = useTestAiEnv({
     GASTI_AI_MODEL_FALLBACK_CHAIN: 'gemini-empty,gemini-success',

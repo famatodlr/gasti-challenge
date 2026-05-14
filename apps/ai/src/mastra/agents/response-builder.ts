@@ -23,6 +23,7 @@ export type GastiStructuredResponse = z.infer<typeof gastiStructuredResponseSche
 
 const GENERIC_GASTI_RESPONSE_FALLBACK = 'No pude armar una respuesta confiable con los datos disponibles.';
 const HEADING_KINDS = new Set<GastiResponseKind>(['financial_insight', 'comparison', 'breakdown']);
+const INLINE_BULLET_MARKER_PATTERN = /(^|\s)([*-]) (?=\S)/g;
 
 function normalizeOptionalString(value: unknown): string | undefined {
   if (typeof value !== 'string') {
@@ -41,6 +42,102 @@ function normalizeOptionalStringList(value: unknown): string[] | undefined {
   const normalized = value
     .map((entry) => normalizeOptionalString(entry))
     .filter((entry): entry is string => Boolean(entry));
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+type InlineBulletRecovery = {
+  leadingText?: string;
+  items: string[];
+};
+
+function recoverInlineBulletRun(section: string): InlineBulletRecovery | null {
+  const matches = Array.from(section.matchAll(INLINE_BULLET_MARKER_PATTERN));
+
+  if (matches.length < 2) {
+    return null;
+  }
+
+  const marker = matches[0]?.[2];
+
+  if (!marker || matches.some((match) => match[2] !== marker)) {
+    return null;
+  }
+
+  const markerStarts = matches.map((match) => (match.index ?? 0) + match[1].length);
+  const markerTokenLength = 2;
+  const leadingText = section.slice(0, markerStarts[0]).trim();
+
+  if (marker === '-' && leadingText && !leadingText.endsWith(':')) {
+    return null;
+  }
+
+  const items = markerStarts
+    .map((start, index) => {
+      const nextStart = markerStarts[index + 1] ?? section.length;
+      return section.slice(start + markerTokenLength, nextStart).trim();
+    })
+    .filter(Boolean);
+
+  if (items.length < 2) {
+    return null;
+  }
+
+  return {
+    ...(leadingText ? { leadingText } : {}),
+    items,
+  };
+}
+
+function normalizeInlineBulletSection(section: string): string {
+  const recovered = recoverInlineBulletRun(section);
+
+  if (!recovered) {
+    return section.trim();
+  }
+
+  const listBlock = recovered.items.map((item) => `- ${item}`).join('\n');
+
+  if (!recovered.leadingText) {
+    return listBlock;
+  }
+
+  return `${recovered.leadingText}\n\n${listBlock}`;
+}
+
+function normalizeMarkdownListText(value: string): string {
+  const normalized = value.replace(/\r\n/g, '\n').trim();
+
+  if (!normalized) {
+    return '';
+  }
+
+  return normalized
+    .split(/\n{2,}/)
+    .map((section) => normalizeInlineBulletSection(section))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function normalizeMarkdownBulletItems(values: readonly string[] | undefined): string[] | undefined {
+  if (!values || values.length === 0) {
+    return undefined;
+  }
+
+  const normalized = values.flatMap((value) => {
+    const recovered = recoverInlineBulletRun(value.replace(/\r\n/g, '\n').trim());
+
+    if (!recovered) {
+      const trimmed = value.trim();
+      return trimmed ? [trimmed] : [];
+    }
+
+    if (recovered.leadingText) {
+      return [recovered.leadingText, ...recovered.items];
+    }
+
+    return recovered.items;
+  });
 
   return normalized.length > 0 ? normalized : undefined;
 }
@@ -83,10 +180,12 @@ export function buildGastiResponseMarkdown(response: GastiStructuredResponse): s
     sections.push(response.headline);
   }
 
-  sections.push(response.summary);
+  sections.push(normalizeMarkdownListText(response.summary));
 
-  if (response.bullets && response.bullets.length > 0) {
-    sections.push(response.bullets.map((bullet) => `- ${bullet}`).join('\n'));
+  const normalizedBullets = normalizeMarkdownBulletItems(response.bullets);
+
+  if (normalizedBullets && normalizedBullets.length > 0) {
+    sections.push(normalizedBullets.map((bullet) => `- ${bullet}`).join('\n'));
   }
 
   if (response.caveats && response.caveats.length > 0) {
@@ -101,5 +200,6 @@ export function buildGastiResponseMarkdown(response: GastiStructuredResponse): s
 }
 
 export function buildSafeGastiResponseFallback(rawText?: string): string {
-  return normalizeOptionalString(rawText) ?? GENERIC_GASTI_RESPONSE_FALLBACK;
+  const normalized = normalizeOptionalString(rawText);
+  return normalized ? normalizeMarkdownListText(normalized) : GENERIC_GASTI_RESPONSE_FALLBACK;
 }

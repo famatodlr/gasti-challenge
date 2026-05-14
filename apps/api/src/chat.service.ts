@@ -1210,9 +1210,10 @@ export class ChatService {
       }
     }
 
-    const generation = buildAgentGenerationMetadata({ text: answer }, messages, modelId);
+    const finalAnswer = buildSafeGastiResponseFallback(answer);
+    const generation = buildAgentGenerationMetadata({ text: finalAnswer }, messages, modelId);
 
-    if (!answer.trim()) {
+    if (!finalAnswer.trim()) {
       this.logger.warn({
         event: 'chat.model_attempt_empty',
         message: 'Gemini model attempt returned an empty answer',
@@ -1241,9 +1242,9 @@ export class ChatService {
       ...generation,
     });
 
-    yield activity.addFinalAnswer(answer);
+    yield activity.addFinalAnswer(finalAnswer);
 
-    return answer;
+    return finalAnswer;
   }
 
   private throwEmptyAnswerExhausted(

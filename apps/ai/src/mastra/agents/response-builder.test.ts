@@ -128,6 +128,69 @@ test('preserves more than three bullets', () => {
   assert.match(markdown, /- Cinco/);
 });
 
+test('normalizes obvious inline bullet runs embedded in summary into a real list block', () => {
+  const response = normalizeGastiStructuredResponse({
+    kind: 'breakdown',
+    summary:
+      'En mayo de 2026, gastaste un total de **ARS 499.698**. Aquí tenés un resumen por categoría: * **Vivienda:** ARS 250.000 * **Salud:** ARS 83.900',
+  });
+
+  assert.ok(response);
+  assert.equal(
+    buildGastiResponseMarkdown(response),
+    [
+      'En mayo de 2026, gastaste un total de **ARS 499.698**. Aquí tenés un resumen por categoría:',
+      '',
+      '- **Vivienda:** ARS 250.000',
+      '- **Salud:** ARS 83.900',
+    ].join('\n'),
+  );
+});
+
+test('splits a structured bullet containing multiple inline bullet markers into separate bullet lines', () => {
+  const response = normalizeGastiStructuredResponse({
+    kind: 'breakdown',
+    summary: 'Tus transacciones más grandes fueron:',
+    bullets: ['* **Propietario:** ARS 250.000 * **Galeno:** ARS 75.000'],
+  });
+
+  assert.ok(response);
+  assert.equal(
+    buildGastiResponseMarkdown(response),
+    [
+      'Tus transacciones más grandes fueron:',
+      '',
+      '- **Propietario:** ARS 250.000',
+      '- **Galeno:** ARS 75.000',
+    ].join('\n'),
+  );
+  assert.doesNotMatch(buildGastiResponseMarkdown(response), /\* \*\*Propietario/);
+});
+
+test('keeps plain prose with emphasis unchanged when there is no repeated inline list marker', () => {
+  const response = normalizeGastiStructuredResponse({
+    kind: 'short_answer',
+    summary: 'Meta: **ARS 1.000.000**. Foco principal: vivienda.',
+  });
+
+  assert.ok(response);
+  assert.equal(buildGastiResponseMarkdown(response), 'Meta: **ARS 1.000.000**. Foco principal: vivienda.');
+});
+
+test('fallback normalizes obvious inline bullet runs without rewriting a single emphasized row', () => {
+  assert.equal(
+    buildSafeGastiResponseFallback(
+      'En mayo: * **Vivienda:** ARS 250.000 * **Salud:** ARS 83.900',
+    ),
+    ['En mayo:', '', '- **Vivienda:** ARS 250.000', '- **Salud:** ARS 83.900'].join('\n'),
+  );
+
+  assert.equal(
+    buildSafeGastiResponseFallback('**Vivienda:** ARS 250.000'),
+    '**Vivienda:** ARS 250.000',
+  );
+});
+
 test('falls back safely for invalid structured content', () => {
   assert.equal(
     normalizeGastiStructuredResponse({
