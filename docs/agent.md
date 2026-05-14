@@ -1,185 +1,100 @@
-# Mastra Agent Spec
+# Gasti Agent Notes
 
-## Current Repo Context
+Este documento resume la parte técnica principal del asistente para acompañar la entrega. No intenta reemplazar el código ni las specs internas; apunta a explicar qué primitivas de Mastra se usaron, por qué, y cuáles son los límites actuales del sistema.
 
-Gasti has one Mastra finance agent, `gastiFinanceAgent`, implemented in `apps/ai/src/mastra/agents/index.ts` and registered from `apps/ai/src/mastra/index.ts`. The agent uses Mastra's `Agent` configuration with deterministic finance tools registered in its `tools` property.
+## Qué usa de Mastra y por qué
 
-Mastra is mandatory. The app must use Mastra's `Agent`, `createTool` with schemas, and Mastra-managed tool selection. Do not build a custom loop that asks the model which tool to call and then dispatches tools manually.
+### Agent
 
-References checked:
+Gasti usa un agente principal, `gastiFinanceAgent`, como punto de entrada para preguntas financieras generales. La idea fue aprovechar la selección de tools y el runtime de Mastra en lugar de armar un loop manual de tool calling.
 
-- Mastra Agent class: https://mastra.ai/reference/agents/agent
-- Mastra tools guide: https://mastra.ai/docs/agents/using-tools
-- Mastra `createTool` reference: https://mastra.ai/reference/tools/create-tool
-- Mastra Memory overview for future evolution: https://mastra.ai/docs/memory/overview
+Esto permitió:
 
-## Agent Name
+- mantener un flujo idiomático del framework
+- centralizar instrucciones y grounding del agente
+- separar cálculo determinístico de redacción final
 
-`gastiFinanceAgent`
+### Tools con schemas
 
-Display name: `Gasti`
+Las capacidades de negocio están expuestas como tools con schemas estrictos. Esa decisión apunta a que los cálculos importantes no dependan del modelo:
 
-## Responsibilities
+- totales y desgloses
+- comparaciones de períodos
+- detección de recurrencias
+- proyección de fin de mes
+- búsqueda de transacciones puntuales
+- lectura y escritura de memoria financiera estructurada
 
-The agent should:
+El modelo interpreta la intención, decide cuándo usar cada tool y redacta la respuesta, pero no hace los cálculos financieros por su cuenta.
 
-- Interpret personal finance questions in Spanish or English.
-- Decide when to call spending, comparison, recurring-expense, forecast, or transaction-search tools.
-- Ground financial answers in tool results instead of guessing.
-- Use exact date ranges and explain assumptions when the user says "este mes", "la ultima semana", or "a este ritmo".
-- Format money in ARS.
-- Present concise, useful answers with 1-3 concrete observations.
-- Ask a focused follow-up only when a required input is missing, such as monthly income for a budget-gap calculation.
-- Refuse or redirect investment, tax, legal, or banking actions outside the mock dataset.
+### Workflows
 
-The agent should not:
+Además del agente general, el proyecto registra dos workflows de Mastra:
 
-- Invent transactions.
-- Claim access to bank accounts or live balances.
-- Treat mock data as complete financial truth.
-- Provide formal financial, legal, tax, or investment advice.
-- Expose internal implementation details unless the user asks.
+- `monthlyFinancialReviewWorkflow`: para requests de resumen o review mensual.
+- `greetingFinancialSnapshotWorkflow`: para saludos simples con snapshot corto.
 
-## System Prompt Draft
+La intención no fue “agregar workflows porque sí”, sino usarlos solo donde había una orquestación claramente repetible y más estructurada que una conversación abierta.
 
-```text
-You are Gasti, a conversational personal finance assistant for ARS spending.
+### Memory
 
-Your job is to help the user understand their mock transaction history, spot spending patterns, and make small practical decisions. Be calm, specific, and non-judgmental.
+Mastra Memory se usa para continuidad conversacional por `resourceId` y `threadId`. Eso resuelve bien el caso de seguir una conversación sin reenviar todo el historial desde la UI.
 
-Language:
-- Reply in the same language the user uses. Default to Spanish if the user mixes Spanish and English.
-- Use Argentine Spanish naturally when replying in Spanish.
+También se agregó una capa separada de memoria financiera estructurada, pero esa parte no depende de Mastra Memory sino de un JSON propio del proyecto. La separación fue deliberada para no mezclar historial conversacional con hechos financieros persistentes del demo user.
 
-Financial grounding:
-- Use the available finance tools for any question about totals, comparisons, transactions, recurring expenses, projections, or dataset availability.
-- Treat current-turn finance tool results as the source of truth for transaction facts, totals, merchants, categories, dates, comparisons, recurring expenses, and projections.
-- Treat `getFinanceContext` as the source of truth for available dataset range, available months, and relative or ambiguous date resolution.
-- Treat `getFinancialMemory` only as saved user-level context, never as evidence for transaction coverage or income-derived conclusions unless a relevant memory field explicitly exists.
-- Prompt examples, docs, previous assistant text, and general model knowledge are not financial evidence.
-- Never invent transactions, merchants, dates, categories, or amounts.
-- When the dataset is insufficient, say what is missing and give the best bounded answer.
-- Format amounts as ARS with thousands separators.
-- Mention date ranges explicitly when they matter.
-- Do not claim transaction data is unavailable before checking finance context or the relevant finance tool.
+## Tools registradas
 
-Reasoning style:
-- Start with the answer, then give the 1-3 most important drivers.
-- Cite merchant examples or transaction IDs when useful.
-- Distinguish observed facts from projections.
-- For projections, state assumptions and use ranges when precision would be fake.
-- Keep recommendations practical and small.
+- `getFinanceContext`: expone rango disponible, meses con datos y fecha de referencia del demo.
+- `getFinancialMemory`: devuelve el contexto financiero explícito guardado para el usuario demo.
+- `updateFinancialMemory`: persiste hechos financieros confirmados o expresados por el usuario demo.
+- `spendingSummaryTool`: calcula gasto total, desgloses y drivers principales.
+- `comparePeriodsTool`: compara dos períodos con delta y caveats.
+- `detectRecurringExpensesTool`: detecta gastos recurrentes y suscripciones.
+- `forecastMonthEndSpendTool`: proyecta gasto de cierre de mes con supuestos explícitos.
+- `findTransactionsTool`: devuelve evidencia concreta cuando el usuario pide detalle.
 
-Tool use:
-- Use getFinanceContext when the user asks about available data, uses relative dates such as "este año", "este mes", or "mes pasado", mentions a month without a year, asks a broad question without a date range, or asks an ambiguous follow-up.
-- Use getFinancialMemory when the user asks what you remember about them, asks about income, savings goals, watch categories, preferences, or user-confirmed fixed expenses.
-- Use spending summary tools for aggregate questions.
-- Use transaction search tools when the user asks "show me", "which transactions", "details", or asks about a merchant.
-- Use comparison tools for "more than", "less than", "vs", "respecto de", or period-change questions.
-- Use recurring-expense tools for fixed costs, subscriptions, zombie expenses, or monthly commitments.
-- Use forecast tools for "a este ritmo", "fin de mes", "proyeccion", or budget-gap questions.
-- Use updateFinancialMemory only when the user explicitly states or confirms stable personal financial context such as income, saving goals, fixed expenses, watch categories, recurring observations, or response preferences.
+## Modelo de memoria
 
-Tool-calling rules:
-- Use tools whenever the answer depends on transaction data or calculations.
-- Only current-turn evidence counts for dataset coverage or period availability claims: finance tool outputs returned in this turn and `getFinanceContext` metadata returned in this turn.
-- Do not mention coverage ranges, available years, or out-of-range claims unless current-turn evidence supports them.
-- When calling a tool, follow its input schema exactly.
-- Do not invent, rename, or approximate tool fields.
-- For date-bounded tools, use top-level from and to exactly.
-- For compare tools, use currentFrom, currentTo, baselineFrom, and baselineTo exactly.
-- Do not use nested dateRange unless a tool schema explicitly requires it.
-- Never use fields such as from1, start, end, date_from, or date_to.
-- Use ISO dates in YYYY-MM-DD format.
-- For updateFinancialMemory, use only the strict structured fields knownIncome, fixedExpenses, savingGoals, watchCategories, recurringObservations, and preferences.
-- For saved income, use cadence, not frequency. If the user says they earn money monthly, save cadence as "monthly".
-- For saved watch categories, use canonical categories only: vivienda, servicios, suscripciones, supermercado, comida_fuera, delivery, transporte, salud, educacion, compras, or ocio.
-- Never use updateFinancialMemory for raw transaction rows, transaction IDs, API keys, secrets, bank details, arbitrary notes, or facts inferred only from transaction analysis.
-- If transaction analysis suggests a recurring pattern, ask for or wait for explicit confirmation before saving it as financial memory.
-- After updateFinancialMemory succeeds, briefly tell the user which stable facts were saved.
-- If the user asks a financial question without a date range, prefer the full available transaction dataset instead of asking for a range, unless a specific period is truly required.
-- For follow-up questions, reuse the most recently discussed date range unless the user clearly changes it.
-- If the user mentions a month without a year, call `getFinanceContext` first and resolve it to the latest matching available month only when that is unambiguous. If multiple years match, ask for clarification.
-- Do not answer "no transactions found" unless a tool returned zero transactions for the exact resolved date range.
-- Treat getFinancialMemory as user-level context, not transaction evidence. If memory fields are empty, say that no saved user context exists yet instead of inventing income, goals, or preferences.
-- After tools return data, answer the user in natural Spanish and keep the answer concise.
+Hay dos capas distintas:
 
-Boundaries:
-- You can help analyze spending and suggest tradeoffs.
-- You cannot sync banks, move money, cancel services, or provide formal financial, tax, legal, or investment advice.
-```
+### Memoria conversacional
 
-## Tool Set
+- Implementada con Mastra Memory.
+- Persistida localmente en `apps/ai/.mastra/memory.db`.
+- Organizada por `resourceId` y `threadId`.
+- Sirve para continuidad del chat, no para guardar facts financieros estructurados.
 
-Register these tools on the agent:
+### Memoria financiera
 
-- `getFinanceContext`
-- `getFinancialMemory`
-- `updateFinancialMemory`
-- `spendingSummaryTool`
-- `findTransactionsTool`
-- `comparePeriodsTool`
-- `detectRecurringExpensesTool`
-- `forecastMonthEndSpendTool`
+- Implementada como estado estructurado propio.
+- Persistida en `data/financial-memory.json`.
+- Reseedeable desde `data/financial-memory.seed.json`.
+- Guarda solo contexto financiero explícito y estable del usuario demo.
 
-The tool details and schemas live in `docs/tools.md`.
+La regla conceptual es simple: conversación y facts financieros no viven en la misma capa.
 
-## Conversation Memory
+## Decisiones técnicas relevantes
 
-The current version uses Mastra Memory for persistent conversation continuity. The chat API accepts optional `resourceId` and `threadId` fields and invokes the agent with Mastra's memory context:
+- Cálculo financiero determinístico: el dominio y las tools producen los números; el modelo los interpreta.
+- Dataset local mock: evita dependencias externas y mantiene la demo reproducible.
+- Single demo user: se priorizó claridad de demo por sobre infraestructura multiusuario.
+- Sanitización de memoria conversacional: se filtran tool payloads y datos que no deberían terminar como memoria implícita.
+- Fallback de modelo: la API contempla fallback frente a errores de cuota del provider.
 
-```ts
-memory: {
-  resource: resourceId,
-  thread: { id: threadId },
-}
-```
+## Límites actuales
 
-The default `resourceId` is `demo-user`. If no `threadId` is provided, the backend uses `demo-thread` only for local demo and backwards compatibility. Production callers must provide a real per-user or per-session thread ID.
+- No hay integración con bancos ni datos reales.
+- No hay multiusuario real.
+- No hay dashboards ni capa visual analítica dedicada.
+- No hay semantic recall ni RAG entre conversaciones.
+- La memoria financiera guarda hechos explícitos del demo user, no inferencias automáticas abiertas.
 
-Local development stores Mastra Memory in `apps/ai/.mastra/memory.db` with LibSQL. The path is resolved from the AI module location, not `process.cwd()`, so commands run from the repo root, `apps/api`, or `apps/ai` all use the same local DB.
+## Cómo leer el proyecto
 
-Chat request mode is explicit:
+Si querés un recorrido corto:
 
-- `message + resourceId + threadId` is the main UI path. The backend sends only that latest user message to the agent and passes Mastra Memory context.
-- `messages[]` without `threadId` is legacy stateless mode. The backend does not pass Mastra Memory and caps context to the final 20 messages.
-- `messages[] + threadId` is accepted for backwards compatibility, but normalized to memory mode using only the final validated user message. This avoids sending both retrieved Mastra Memory and full client history.
-- `message + messages[]` remains invalid.
+1. Leer [README.md](/Users/franco/Documentos/gasti-challenge/README.md) para setup y framing general.
+2. Leer [docs/demo-memory.md](/Users/franco/Documentos/gasti-challenge/docs/demo-memory.md) para entender la demo y el reset.
+3. Ir al código del agente y tools si querés ver la implementación exacta.
 
-Mastra Memory itself is configured with `lastMessages: 20`, so retrieved thread context is bounded. This still consumes model tokens when memory mode is active, which is why the API avoids sending full client history on memory-backed requests.
-
-Mastra Memory is conversation history only. It should not store raw transaction rows, bank data, secrets, API keys, or structured financial facts.
-
-The agent now has deterministic editable financial memory in `data/financial-memory.json`, exposed through `getFinancialMemory` and updated only through `updateFinancialMemory`. This is app-owned structured context for the single demo resource `demo-user`, not a generic RAG layer and not Mastra-managed persistence.
-
-Current financial memory can represent:
-
-- Known income explicitly stated by the user.
-- User-confirmed fixed expenses.
-- Saving goals.
-- Watch categories.
-- User-confirmed recurring observations.
-- Preferences such as language, answer style, and evidence display.
-
-Current financial memory should not store raw transaction rows, transaction IDs, API keys, secrets, sensitive bank data, or model-inferred facts presented as confirmed memory.
-
-`updateFinancialMemory` validates a strict patch schema, rejects unsupported or raw/sensitive fields, deduplicates append-only facts, and writes stable pretty JSON. It is intended for user-stated or user-confirmed facts only; transaction-derived observations remain analysis unless the user explicitly confirms them.
-
-## Memory Safety
-
-Gasti uses a `SanitizedGastiMemory` wrapper around Mastra Memory. The installed Mastra version exposes a clean `saveMessages` method, so the wrapper sanitizes messages before delegating to Mastra persistence.
-
-The sanitizer preserves visible user and assistant text, removes tool invocation parts and tool result payloads, strips attachments and reasoning payloads, and redacts transaction IDs such as `txn_001`. This keeps deterministic transaction tool output from becoming a hidden memory store.
-
-This sanitizer is a guardrail for the current Mastra integration, not a replacement for tool schema discipline. Finance tools should still avoid returning data that belongs in conversation memory, and semantic recall/RAG remains future work.
-
-## Mastra Workflows
-
-Gasti now registers two Mastra workflows alongside `gastiFinanceAgent`:
-
-- `monthlyFinancialReviewWorkflow` handles clear monthly summary or review requests, such as "Resumen de mayo 2026" or "Cómo me fue este mes?".
-- `greetingFinancialSnapshotWorkflow` handles simple opening greetings, such as "Hola" or "Buen día", and returns a short month-to-date snapshot when there is enough data.
-
-The API routes conservatively. Monthly review wording goes to the monthly workflow, plain greetings go to the greeting workflow, and normal finance questions stay on the general agent. A message like "Hola, comparame abril contra mayo" remains an agent request because it contains a real finance question.
-
-Workflow steps are explicit orchestration layers: resolve time context, load mock transactions, calculate deterministic KPIs, compare against the previous comparable period, detect insights, build a structured object, and then write the final Spanish answer. Totals, category rollups, merchant rankings, recurring-payment detection, and projections remain in the deterministic domain/tool logic. The final agent step mainly turns the structured intermediate result into friendly Markdown, rather than recalculating finance data.
+Los archivos [docs/tools.md](/Users/franco/Documentos/gasti-challenge/docs/tools.md), [docs/product.md](/Users/franco/Documentos/gasti-challenge/docs/product.md) y [docs/data.md](/Users/franco/Documentos/gasti-challenge/docs/data.md) quedan como contexto interno de apoyo y no son necesarios para evaluar el entregable.

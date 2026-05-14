@@ -1,5 +1,7 @@
 # Product Spec: Gasti
 
+> Internal product note. This file is support material from development and is not required to run or evaluate the final deliverable. For the delivery-facing overview, start with [README.md](/Users/franco/Documentos/gasti-challenge/README.md) and [agent.md](/Users/franco/Documentos/gasti-challenge/docs/agent.md).
+
 ## Product Angle
 
 Gasti is a conversational personal finance assistant for everyday ARS spending. The core promise is not "build a budget app"; it is "help me understand what happened to my money, why it happened, and what small decision I can make this week."
