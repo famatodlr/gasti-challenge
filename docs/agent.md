@@ -89,12 +89,3 @@ La regla conceptual es simple: conversación y facts financieros no viven en la 
 - No hay semantic recall ni RAG entre conversaciones.
 - La memoria financiera guarda hechos explícitos del demo user, no inferencias automáticas abiertas.
 
-## Cómo leer el proyecto
-
-Si querés un recorrido corto:
-
-1. Leer [README.md](/Users/franco/Documentos/gasti-challenge/README.md) para setup y framing general.
-2. Leer [docs/demo-memory.md](/Users/franco/Documentos/gasti-challenge/docs/demo-memory.md) para entender la demo y el reset.
-3. Ir al código del agente y tools si querés ver la implementación exacta.
-
-Los archivos [docs/tools.md](/Users/franco/Documentos/gasti-challenge/docs/tools.md), [docs/product.md](/Users/franco/Documentos/gasti-challenge/docs/product.md) y [docs/data.md](/Users/franco/Documentos/gasti-challenge/docs/data.md) quedan como contexto interno de apoyo y no son necesarios para evaluar el entregable.

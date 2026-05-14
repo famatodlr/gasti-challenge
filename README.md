@@ -94,23 +94,31 @@ Más detalle técnico sobre Mastra, workflows y memoria en [docs/agent.md](/User
 - Tono local: respuestas orientadas a ARS, merchants argentinos y lenguaje cotidiano.
 
 ## Validación
-
-Desde la raíz:
+Desde la raíz, para verificar que el proyecto compila:
 
 ```bash
 bun run build
 ```
 
-Validaciones principales:
+Para correr toda la suite de tests:
 
-```bash
-cd apps/ai && bun run test:domain && bun run test:tools && bun run test:agents && bun run test:workflows && bun run verify:domain
-cd apps/api && bun run test
-cd apps/ui && bun run test
+```
+bun run test
 ```
 
-Hay un checklist final en [docs/final-checklist.md](/Users/franco/Documentos/gasti-challenge/docs/final-checklist.md).
+También se pueden correr las validaciones por módulo:
 
+```
+bun run test:ai
+bun run test:api
+bun run test:ui
+```
+
+Si los tests de memoria fallan por datos persistidos de una demo anterior, se puede resetear la memoria demo con:
+
+bun run demo:reset-memory
+
+Hay un checklist final en docs/final-checklist.md.
 ## Qué dejaría para después
 
 - Multiusuario real con aislamiento de memoria y contexto.

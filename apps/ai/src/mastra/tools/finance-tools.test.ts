@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { getCurrentDateString } from '../domain/current-date.ts';
+import { resetDemoMemory } from '../domain/demo-memory-reset.ts';
 import {
   comparePeriodsTool,
   detectRecurringExpensesTool,
@@ -152,40 +153,74 @@ test('getFinanceContextTool exposes dataset metadata without raw transactions', 
 });
 
 test('getFinancialMemoryTool exposes structured user context without raw transactions', async () => {
-  const financialMemory = await executeTool(getFinancialMemoryTool, {});
-  const parsedFinancialMemory = getFinancialMemoryTool.outputSchema.parse(financialMemory);
+  resetDemoMemory('financial');
 
-  assert.equal(parsedFinancialMemory.schemaVersion, 1);
-  assert.equal(parsedFinancialMemory.resourceId, 'demo-user');
-  assert.equal(parsedFinancialMemory.currency, 'ARS');
-  assert.deepEqual(parsedFinancialMemory.knownIncome, [
-    {
-      label: 'Ingreso mensual',
-      amount: 1500000,
-      currency: 'ARS',
-      cadence: 'monthly',
-      source: 'user_stated',
-    },
-  ]);
-  assert.deepEqual(parsedFinancialMemory.fixedExpenses, []);
-  assert.deepEqual(parsedFinancialMemory.savingGoals, [
-    {
-      name: 'Viaje a Japón',
-      targetAmount: 1000000,
-      currency: 'ARS',
-      targetDate: '2025-01-01',
-      source: 'user_stated',
-    },
-  ]);
-  assert.deepEqual(parsedFinancialMemory.watchCategories, ['delivery']);
-  assert.deepEqual(parsedFinancialMemory.recurringObservations, []);
-  assert.deepEqual(parsedFinancialMemory.preferences, {
-    preferredLanguage: 'es-AR',
-    answerStyle: 'concise',
-    includeEvidence: true,
-  });
-  assert.equal(JSON.stringify(parsedFinancialMemory).includes('txn_'), false);
-  assert.equal(JSON.stringify(parsedFinancialMemory).includes('transactions'), false);
+  try {
+    // These tools are fixed to DEMO_USER_RESOURCE_ID internally and do not accept resourceId input.
+    await executeTool(updateFinancialMemoryTool, {
+      knownIncome: [
+        {
+          label: 'Ingreso mensual',
+          amount: 1500000,
+          currency: 'ARS',
+          cadence: 'monthly',
+          source: 'user_stated',
+        },
+      ],
+      savingGoals: [
+        {
+          name: 'Viaje a Japón',
+          targetAmount: 1000000,
+          currency: 'ARS',
+          targetDate: '2025-01-01',
+          source: 'user_stated',
+        },
+      ],
+      watchCategories: ['delivery'],
+      preferences: {
+        preferredLanguage: 'es-AR',
+        answerStyle: 'concise',
+        includeEvidence: true,
+      },
+    });
+
+    const financialMemory = await executeTool(getFinancialMemoryTool, {});
+    const parsedFinancialMemory = getFinancialMemoryTool.outputSchema.parse(financialMemory);
+
+    assert.equal(parsedFinancialMemory.schemaVersion, 1);
+    assert.equal(parsedFinancialMemory.resourceId, 'demo-user');
+    assert.equal(parsedFinancialMemory.currency, 'ARS');
+    assert.deepEqual(parsedFinancialMemory.knownIncome, [
+      {
+        label: 'Ingreso mensual',
+        amount: 1500000,
+        currency: 'ARS',
+        cadence: 'monthly',
+        source: 'user_stated',
+      },
+    ]);
+    assert.deepEqual(parsedFinancialMemory.fixedExpenses, []);
+    assert.deepEqual(parsedFinancialMemory.savingGoals, [
+      {
+        name: 'Viaje a Japón',
+        targetAmount: 1000000,
+        currency: 'ARS',
+        targetDate: '2025-01-01',
+        source: 'user_stated',
+      },
+    ]);
+    assert.deepEqual(parsedFinancialMemory.watchCategories, ['delivery']);
+    assert.deepEqual(parsedFinancialMemory.recurringObservations, []);
+    assert.deepEqual(parsedFinancialMemory.preferences, {
+      preferredLanguage: 'es-AR',
+      answerStyle: 'concise',
+      includeEvidence: true,
+    });
+    assert.equal(JSON.stringify(parsedFinancialMemory).includes('txn_'), false);
+    assert.equal(JSON.stringify(parsedFinancialMemory).includes('transactions'), false);
+  } finally {
+    resetDemoMemory('financial');
+  }
 });
 
 test('updateFinancialMemoryTool exposes a strict structured patch schema', () => {

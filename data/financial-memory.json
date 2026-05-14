@@ -2,26 +2,9 @@
   "schemaVersion": 1,
   "resourceId": "demo-user",
   "currency": "ARS",
-  "knownIncome": [
-    {
-      "label": "Ingreso mensual",
-      "amount": 1500000,
-      "currency": "ARS",
-      "cadence": "monthly",
-      "source": "user_stated"
-    }
-  ],
+  "knownIncome": [],
   "fixedExpenses": [],
-  "savingGoals": [
-    {
-      "name": "Viaje a Japón",
-      "targetAmount": 1000000,
-      "currency": "ARS",
-      "targetDate": "2027-12-31",
-      "monthlyContributionTarget": 52632,
-      "source": "user_stated"
-    }
-  ],
+  "savingGoals": [],
   "watchCategories": [],
   "recurringObservations": [],
   "preferences": {

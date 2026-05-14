@@ -9,9 +9,16 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "start": "turbo run start",
+
+    "test": "bun run test:ai && bun run test:api && bun run test:ui",
+    "test:ai": "bun run --cwd apps/ai test:domain && bun run --cwd apps/ai test:tools && bun run --cwd apps/ai test:agents && bun run --cwd apps/ai test:workflows && bun run --cwd apps/ai verify:domain",
+    "test:api": "bun run --cwd apps/api test",
+    "test:ui": "bun run --cwd apps/ui test",
+
     "dev:api": "turbo run dev --filter=api",
     "dev:ui": "turbo run dev --filter=ui",
     "dev:ai": "turbo run dev --filter=ai",
+
     "demo:reset-memory": "bun apps/ai/src/mastra/domain/demo-memory-reset.ts all",
     "demo:reset-memory:conversation": "bun apps/ai/src/mastra/domain/demo-memory-reset.ts conversation",
     "demo:reset-memory:financial": "bun apps/ai/src/mastra/domain/demo-memory-reset.ts financial"
