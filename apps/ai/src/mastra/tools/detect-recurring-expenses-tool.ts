@@ -28,7 +28,8 @@ const detectRecurringExpensesInputSchema = addDateRangeOrderValidation(
 
 export const detectRecurringExpensesTool = createTool({
   id: 'detectRecurringExpensesTool',
-  description: 'Detect repeated ARS expenses, fixed costs, subscriptions, and likely recurring merchants.',
+  description:
+    'Detect repeated ARS expenses, separating probable monthly commitments from repeated merchant habits without over-claiming fixed costs.',
   inputSchema: detectRecurringExpensesInputSchema,
   outputSchema: z.object({
     period: dateRangeSchema,

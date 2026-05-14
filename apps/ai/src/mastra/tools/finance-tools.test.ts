@@ -102,8 +102,15 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedRecurringExpenses.currency, 'ARS');
   assert.equal(parsedRecurringExpenses.estimatedMonthlyCommittedSpend, 344048);
   assert.equal(parsedRecurringExpenses.summary.committedMonthlyTotal, 344048);
+  assert.equal(parsedRecurringExpenses.summary.fixedLikeCount, 7);
+  assert.equal(parsedRecurringExpenses.summary.variableRepeatCount, 8);
   assert.ok(parsedRecurringExpenses.items.some((item) => item.classification === 'compromiso'));
   assert.ok(parsedRecurringExpenses.items.some((item) => item.merchant === 'Netflix'));
+  assert.equal(parsedRecurringExpenses.items.find((item) => item.merchant === 'Starbucks')?.classification, 'repeticion_variable');
+  assert.match(
+    parsedRecurringExpenses.caveats.join(' '),
+    /habits rather than fixed commitments/i,
+  );
 
   const monthEndForecast = await executeTool(forecastMonthEndSpendTool, {
     month: '2026-05',

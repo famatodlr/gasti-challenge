@@ -767,7 +767,12 @@ function buildRecurringItem(
     reason: buildRecurringReason(cadence, occurrences.length, amountSimilarity, isFixedHint),
     possibleZombie: latest.category === 'suscripciones' && confidence !== 'high',
   };
-  const classification = isCommittedRecurringItem(baseItem) ? 'compromiso' : 'repeticion_variable';
+  const classification = isCommittedRecurringItem({
+    ...baseItem,
+    occurrenceCount: sortedOccurrences.length,
+  })
+    ? 'compromiso'
+    : 'repeticion_variable';
 
   return {
     ...baseItem,
@@ -780,19 +785,19 @@ function buildRecurringItem(
 }
 
 function isCommittedRecurringItem(
-  item: Pick<RecurringExpenseItem, 'category' | 'merchant' | 'confidence' | 'cadence'>,
+  item: Pick<RecurringExpenseItem, 'category' | 'merchant' | 'confidence' | 'cadence' | 'occurrenceCount'>,
 ): boolean {
   const hasFixedSignal = fixedCategoryHints.has(item.category) || isFixedMerchant(item.merchant);
 
-  if (!hasFixedSignal || item.confidence === 'low') {
+  if (!hasFixedSignal || item.confidence === 'low' || item.occurrenceCount < 2) {
     return false;
   }
 
-  if (item.confidence === 'high') {
-    return item.cadence === 'monthly';
+  if (item.cadence !== 'monthly') {
+    return false;
   }
 
-  return item.confidence === 'medium' && item.cadence !== 'irregular_repeat';
+  return item.confidence === 'high' || item.confidence === 'medium';
 }
 
 function getDateGaps(occurrences: readonly Transaction[]): number[] {
@@ -828,7 +833,15 @@ function inferRecurringConfidence(
     return 'high';
   }
 
-  if ((cadence === 'monthly' && amountSimilarity >= 0.75) || (isFixedHint && occurrences >= 2)) {
+  if (cadence === 'monthly' && isFixedHint && occurrences >= 2) {
+    return 'medium';
+  }
+
+  if (cadence === 'monthly' && amountSimilarity >= 0.75) {
+    return 'medium';
+  }
+
+  if (isFixedHint && occurrences >= 2 && amountSimilarity >= 0.9) {
     return 'medium';
   }
 
@@ -864,7 +877,7 @@ function buildRecurringReason(
   const amountLabel = amountSimilarity >= 0.9 ? 'very similar amounts' : 'some amount variation';
   const categoryLabel = isFixedHint ? 'fixed-cost category or merchant hint' : 'variable-spend merchant';
 
-  return `${occurrences} occurrences with ${cadenceLabel}, ${amountLabel}, and ${categoryLabel}.`;
+  return `${occurrences} occurrences with ${cadenceLabel}, ${amountLabel}, and ${categoryLabel}; use fixed-cost interpretation only when the timing looks monthly.`;
 }
 
 function calculateAmountSimilarity(amounts: readonly number[]): number {
