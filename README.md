@@ -119,18 +119,18 @@ Si los tests de memoria fallan por datos persistidos de una demo anterior, se pu
 bun run demo:reset-memory
 
 Hay un checklist final en [docs/final-checklist.md](/Users/franco/Documentos/gasti-challenge/docs/final-checklist.md).
-## Qué dejaría para después
+
+## Trabajo a futuro:
 
 - Multiusuario real con aislamiento de memoria y contexto.
+- Semantic recall o una estrategia de recuperación de memoria entre conversaciones.
 - Más profundidad en memoria financiera y mejores controles de edición.
-- Semantic recall o una estrategia de recuperación más rica entre conversaciones.
-- Una capa visual complementaria para tendencias o comparaciones, sin sacar al chat del centro.
+- Dashboards visuales tendencias o comparaciones, sin sacar al chat del centro.
 
 ## Documentación complementaria
 
 - [docs/agent.md](/Users/franco/Documentos/gasti-challenge/docs/agent.md): arquitectura del agente, uso de Mastra y límites del sistema.
 - [docs/demo-memory.md](/Users/franco/Documentos/gasti-challenge/docs/demo-memory.md): manejo de memoria demo y reset por terminal.
-- [docs/final-checklist.md](/Users/franco/Documentos/gasti-challenge/docs/final-checklist.md): checklist final de verificación para entrega/demo.
 - [docs/writeup-draft.md](/Users/franco/Documentos/gasti-challenge/docs/writeup-draft.md): primera iteración del writeup.
 
 Los archivos [docs/product.md](/Users/franco/Documentos/gasti-challenge/docs/product.md), [docs/tools.md](/Users/franco/Documentos/gasti-challenge/docs/tools.md) y [docs/data.md](/Users/franco/Documentos/gasti-challenge/docs/data.md) quedan como notas internas de soporte y no son necesarias para correr ni evaluar el proyecto.

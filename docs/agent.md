@@ -36,6 +36,8 @@ Además del agente general, el proyecto registra dos workflows de Mastra:
 
 La intención no fue “agregar workflows porque sí”, sino usarlos solo donde había una orquestación claramente repetible y más estructurada que una conversación abierta.
 
+En particular, se usan workflows cuando la tarea es más repetitiva y conviene no darle tanta libertad al LLM para decidir pasos, orden o criterios en cada turno. Así se reduce variabilidad, se mejora consistencia y se mantiene más predecible el resultado en flujos tipo "resumen mensual" o "snapshot de saludo".
+
 ### Memory
 
 Mastra Memory se usa para continuidad conversacional por `resourceId` y `threadId`. Eso resuelve bien el caso de seguir una conversación sin reenviar todo el historial desde la UI.
@@ -88,4 +90,3 @@ La regla conceptual es simple: conversación y facts financieros no viven en la 
 - No hay dashboards ni capa visual analítica dedicada.
 - No hay semantic recall ni RAG entre conversaciones.
 - La memoria financiera guarda hechos explícitos del demo user, no inferencias automáticas abiertas.
-

@@ -586,9 +586,13 @@ z.object({
 })
 ```
 
-## Optional `monthlyReviewWorkflow`
+## `monthlyReviewWorkflow` (implemented)
 
-This is not required for the base implementation. If there is time, create a Mastra workflow that runs the first four tools in a fixed sequence and exposes the workflow to the agent. Use it only for explicit review requests like:
+This workflow is implemented in the repo at `apps/ai/src/mastra/workflows/monthly-review-workflow.ts`.
+
+It is not a standalone tool. It is a deterministic workflow that orchestrates domain analytics in sequence for explicit monthly-review requests and then uses a narrator agent for the final wording.
+
+Use it only for explicit review requests like:
 
 - "Haceme un resumen del mes"
 - "Dame un chequeo financiero rapido"
