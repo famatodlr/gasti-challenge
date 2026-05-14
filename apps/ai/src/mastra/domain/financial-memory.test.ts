@@ -10,6 +10,7 @@ import {
   loadFinancialMemory,
   updateFinancialMemory,
 } from './financial-memory.ts';
+import { DEMO_USER_RESOURCE_ID } from './demo-context.ts';
 
 function createTemporaryMemoryFile(): { path: string; cleanup: () => void } {
   const directory = mkdtempSync(join(tmpdir(), 'gasti-financial-memory-'));
@@ -27,7 +28,7 @@ test('creates empty financial memory defaults for the demo user', () => {
   const memory = financialMemorySchema.parse(createEmptyFinancialMemory());
 
   assert.equal(memory.schemaVersion, 1);
-  assert.equal(memory.resourceId, 'demo-user');
+  assert.equal(memory.resourceId, DEMO_USER_RESOURCE_ID);
   assert.equal(memory.currency, 'ARS');
   assert.deepEqual(memory.knownIncome, []);
   assert.deepEqual(memory.fixedExpenses, []);
@@ -44,7 +45,7 @@ test('creates empty financial memory defaults for the demo user', () => {
 test('loads the deterministic financial memory fixture', () => {
   const memory = financialMemorySchema.parse(loadFinancialMemory());
 
-  assert.equal(memory.resourceId, 'demo-user');
+  assert.equal(memory.resourceId, DEMO_USER_RESOURCE_ID);
   assert.equal(memory.currency, 'ARS');
   assert.deepEqual(memory.knownIncome, [
     {

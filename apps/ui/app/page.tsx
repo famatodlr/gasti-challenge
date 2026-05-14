@@ -36,8 +36,8 @@ const starterQuestions = [
   'Proyectá mi gasto de este mes',
 ];
 
-const THREAD_STORAGE_KEY = 'gasti.threadId';
-const LOCAL_DEMO_DEFAULT_THREAD_ID = 'demo-thread';
+const DEMO_THREAD_STORAGE_KEY = 'gasti.threadId';
+const DEMO_DEFAULT_THREAD_ID = 'demo-thread';
 
 const initialMessages: ChatMessage[] = [
   {
@@ -65,17 +65,17 @@ function createThreadId(): string {
 
 function readOrCreateStoredThreadId(): string {
   if (typeof window === 'undefined') {
-    return LOCAL_DEMO_DEFAULT_THREAD_ID;
+    return DEMO_DEFAULT_THREAD_ID;
   }
 
-  const storedThreadId = window.localStorage.getItem(THREAD_STORAGE_KEY)?.trim();
+  const storedThreadId = window.localStorage.getItem(DEMO_THREAD_STORAGE_KEY)?.trim();
 
   if (storedThreadId) {
     return storedThreadId;
   }
 
   const nextThreadId = createThreadId();
-  window.localStorage.setItem(THREAD_STORAGE_KEY, nextThreadId);
+  window.localStorage.setItem(DEMO_THREAD_STORAGE_KEY, nextThreadId);
 
   return nextThreadId;
 }
@@ -94,7 +94,7 @@ export default function Page() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [threadId, setThreadId] = useState(LOCAL_DEMO_DEFAULT_THREAD_ID);
+  const [threadId, setThreadId] = useState(DEMO_DEFAULT_THREAD_ID);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isSendingRef = useRef(false);
   const activityItems = createActivityFeedItems(latestActivity);
@@ -264,7 +264,7 @@ export default function Page() {
     const nextThreadId = createThreadId();
 
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(THREAD_STORAGE_KEY, nextThreadId);
+      window.localStorage.setItem(DEMO_THREAD_STORAGE_KEY, nextThreadId);
     }
 
     setThreadId(nextThreadId);

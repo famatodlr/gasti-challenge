@@ -36,7 +36,8 @@ test('greeting workflow produces a short snapshot with at most two insights and 
   assert.ok(result.snapshot.insights.length <= 2);
   assert.ok(result.answer.length < 420);
   assert.ok(countLikelyEmoji(result.answer) <= 1);
-  assert.match(result.answer, /^Hola Franco/);
+  assert.match(result.answer, /^Hola\b/);
+  assert.doesNotMatch(result.answer, /Franco/);
   assert.match(result.answer, /\*\*ARS 499\.698\*\*/);
   assert.match(result.answer, /¿[^?\n]+\?/);
 });
@@ -68,11 +69,11 @@ test('greeting workflow appends fallback activity label when narrator retries mo
     {
       answerGenerator: async ({ onActivityLabel }) => {
         onActivityLabel?.('Reintentando con otro modelo');
-        return 'Hola Franco 👋';
+        return 'Hola 👋';
       },
     },
   );
 
-  assert.equal(result.answer, 'Hola Franco 👋');
+  assert.equal(result.answer, 'Hola 👋');
   assert.deepEqual(result.activityLabels.at(-1), 'Reintentando con otro modelo');
 });

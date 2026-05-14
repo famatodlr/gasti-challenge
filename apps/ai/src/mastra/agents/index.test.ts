@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MockStore } from '@mastra/core/storage';
+import { DEMO_DEFAULT_MEMORY_THREAD_ID, DEMO_USER_RESOURCE_ID } from '../domain/demo-context.ts';
 
 import {
-  DEMO_RESOURCE_ID,
-  LOCAL_DEMO_DEFAULT_THREAD_ID,
   SanitizedGastiMemory,
   gastiConversationMemory,
   memoryDatabasePath,
@@ -53,8 +52,8 @@ test('gastiFinanceAgent registers updateFinancialMemory as an available tool', (
 });
 
 test('gastiFinanceAgent has persistent conversation memory configured', () => {
-  assert.equal(DEMO_RESOURCE_ID, 'demo-user');
-  assert.equal(LOCAL_DEMO_DEFAULT_THREAD_ID, 'demo-thread');
+  assert.equal(DEMO_USER_RESOURCE_ID, 'demo-user');
+  assert.equal(DEMO_DEFAULT_MEMORY_THREAD_ID, 'demo-thread');
   assert.equal(gastiFinanceAgent.getMemory(), gastiConversationMemory);
 });
 

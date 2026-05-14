@@ -8,9 +8,7 @@ import { Memory } from '@mastra/memory';
 import type { MastraMessageV1 } from '@mastra/core/memory';
 import type { MastraMessageV2 } from '@mastra/core/agent';
 import type { MemoryConfig, SharedMemoryConfig } from '@mastra/core/memory';
-
-export const DEMO_RESOURCE_ID = 'demo-user';
-export const LOCAL_DEMO_DEFAULT_THREAD_ID = 'demo-thread';
+import { createDemoMemoryContext } from '../domain/demo-context.ts';
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 
@@ -53,10 +51,7 @@ export function createGastiConversationMemoryContext({
   resourceId,
   threadId,
 }: GastiConversationMemoryIdentifiers = {}): GastiConversationMemoryContext {
-  return {
-    resource: normalizeMemoryIdentifier(resourceId, DEMO_RESOURCE_ID),
-    thread: { id: normalizeMemoryIdentifier(threadId, LOCAL_DEMO_DEFAULT_THREAD_ID) },
-  };
+  return createDemoMemoryContext({ resourceId, threadId });
 }
 
 export function sanitizeMastraMemoryMessagesForGasti<T extends MastraMessageV1 | MastraMessageV2>(
@@ -65,11 +60,6 @@ export function sanitizeMastraMemoryMessagesForGasti<T extends MastraMessageV1 |
   return messages
     .map((message) => sanitizeMastraMemoryMessageForGasti(message))
     .filter((message): message is T => Boolean(message));
-}
-
-function normalizeMemoryIdentifier(value: string | undefined, fallback: string): string {
-  const trimmedValue = value?.trim();
-  return trimmedValue || fallback;
 }
 
 function sanitizeMastraMemoryMessageForGasti<T extends MastraMessageV1 | MastraMessageV2>(message: T): T | null {

@@ -10,9 +10,8 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
-  DEMO_RESOURCE_ID,
+  createDemoMemoryContext,
   GastiModelFallbackExhaustedError,
-  LOCAL_DEMO_DEFAULT_THREAD_ID,
   buildGastiResponseMarkdown,
   buildSafeGastiResponseFallback,
   detectGastiWorkflowIntent,
@@ -150,16 +149,8 @@ type ChatRequestLogMetadata = Pick<
   | 'hasThreadId'
 >;
 
-function normalizeMemoryIdentifier(value: string | undefined, fallback: string): string {
-  const trimmedValue = value?.trim();
-  return trimmedValue || fallback;
-}
-
 function createAgentMemoryContext(context: ChatRequestContext = {}): AgentMemoryContext {
-  return {
-    resource: normalizeMemoryIdentifier(context.resourceId, DEMO_RESOURCE_ID),
-    thread: { id: normalizeMemoryIdentifier(context.threadId, LOCAL_DEMO_DEFAULT_THREAD_ID) },
-  };
+  return createDemoMemoryContext(context);
 }
 
 class EmptyAgentAnswerError extends Error {

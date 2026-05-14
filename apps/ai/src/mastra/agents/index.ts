@@ -30,14 +30,19 @@ export {
 } from './response-builder.ts';
 
 export {
-  DEMO_RESOURCE_ID,
-  LOCAL_DEMO_DEFAULT_THREAD_ID,
   SanitizedGastiMemory,
   createGastiConversationMemoryContext,
   gastiConversationMemory,
   memoryDatabasePath,
   sanitizeMastraMemoryMessagesForGasti,
 } from './conversation-memory.ts';
+export {
+  createDemoMemoryContext,
+  DEMO_DEFAULT_MEMORY_THREAD_ID,
+  DEMO_USER_RESOURCE_ID,
+  normalizeDemoResourceId,
+  normalizeDemoThreadId,
+} from '../domain/demo-context.ts';
 export { getGastiModelFallbackChain, getGastiModelId, getGeminiApiKey } from './model.ts';
 export {
   GastiModelFallbackExhaustedError,

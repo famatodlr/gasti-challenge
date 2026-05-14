@@ -4,6 +4,7 @@ import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 
+import { getCurrentDateString } from '../domain/current-date.ts';
 import { loadTransactions as loadDefaultTransactions } from '../domain/transaction-repository.ts';
 import { dateRangeSchema, dateStringSchema, formatARS, type Transaction, transactionSchema } from '../domain/transaction.ts';
 import { generateWithGastiModelFallback } from '../agents/model-fallback.ts';
@@ -115,7 +116,7 @@ const greetingNarratorAgent = new Agent({
 export function buildDeterministicGreetingAnswer({ snapshot }: Pick<GreetingAnswerGeneratorInput, 'snapshot'>): string {
   if (!snapshot.enoughData) {
     return [
-      'Hola Franco 👋',
+      'Hola 👋',
       'Todavía no veo suficiente movimiento este mes para sacar una conclusión fuerte.',
       '¿Querés que revise gastos puntuales, recurrentes o una comparación contra el mes pasado?',
     ].join('\n\n');
@@ -131,7 +132,7 @@ export function buildDeterministicGreetingAnswer({ snapshot }: Pick<GreetingAnsw
         }** que ${comparison.previousPeriodLabel}${driverText ? `, sobre todo por ${driverText}` : ''}.`;
 
   return [
-    'Hola Franco 👋',
+    'Hola 👋',
     `En **${snapshot.temporalContext.label}** llevás **${formatARS(snapshot.currentMonthSpending)}** gastados.`,
     comparisonText || (driverText ? `Los drivers más claros por ahora son ${driverText}.` : 'Todavía no aparece un driver dominante en los datos.'),
     '¿Querés que te muestre qué gastos explican la diferencia?',
@@ -183,7 +184,7 @@ Escribí el saludo final. Mantenelo corto.`,
 }
 
 export function buildGreetingFinancialSnapshot({
-  currentDate = new Date().toISOString().slice(0, 10),
+  currentDate = getCurrentDateString(),
   transactions,
 }: {
   currentDate?: string;

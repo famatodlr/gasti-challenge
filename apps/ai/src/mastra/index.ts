@@ -6,12 +6,13 @@ import {
 } from './workflows/index.ts';
 
 export {
-  DEMO_RESOURCE_ID,
-  LOCAL_DEMO_DEFAULT_THREAD_ID,
   SanitizedGastiMemory,
   buildGastiResponseMarkdown,
   buildSafeGastiResponseFallback,
+  createDemoMemoryContext,
   createGastiConversationMemoryContext,
+  DEMO_DEFAULT_MEMORY_THREAD_ID,
+  DEMO_USER_RESOURCE_ID,
   financeTools,
   gastiConversationMemory,
   gastiFinanceAgent,
@@ -21,6 +22,8 @@ export {
   generateWithGastiModelFallback,
   GastiModelFallbackExhaustedError,
   normalizeGastiStructuredResponse,
+  normalizeDemoResourceId,
+  normalizeDemoThreadId,
   getGastiModelFallbackChain,
   getGastiModelId,
   getGeminiApiKey,

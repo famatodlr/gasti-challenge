@@ -11,6 +11,7 @@ import {
   summarizeSpending,
   type PeriodComparison,
 } from '../domain/analytics.ts';
+import { getCurrentDateString } from '../domain/current-date.ts';
 import { loadTransactions as loadDefaultTransactions } from '../domain/transaction-repository.ts';
 import {
   compareISODate,
@@ -37,7 +38,6 @@ export const MONTHLY_REVIEW_ACTIVITY_LABELS = [
 ] as const;
 
 const WORKFLOW_MODEL_RUNTIME_CONTEXT_KEY = 'gasti.workflow.modelId';
-const DEFAULT_TIME_ZONE = 'America/Argentina/Buenos_Aires';
 
 const categoryLabels: Record<Category, string> = {
   comida_fuera: 'Comida fuera',
@@ -882,20 +882,6 @@ function findLatestTransactionDateInMonth(transactions: readonly Transaction[], 
 
 function findLatestDatasetMonth(transactions: readonly Transaction[]): string | undefined {
   return transactions.map((transaction) => transaction.date.slice(0, 7)).sort(compareISODate).at(-1);
-}
-
-function getCurrentDateString(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: DEFAULT_TIME_ZONE,
-    year: 'numeric',
-  }).formatToParts(new Date());
-  const year = parts.find((part) => part.type === 'year')?.value;
-  const month = parts.find((part) => part.type === 'month')?.value;
-  const day = parts.find((part) => part.type === 'day')?.value;
-
-  return `${year}-${month}-${day}`;
 }
 
 function buildMonthKey(year: number, month: number): string {

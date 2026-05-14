@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { getCurrentDateString } from '../domain/current-date.ts';
 import {
   comparePeriodsTool,
   detectRecurringExpensesTool,
@@ -121,7 +122,7 @@ test('getFinanceContextTool exposes dataset metadata without raw transactions', 
   const financeContext = await executeTool(getFinanceContextTool, {});
   const parsedFinanceContext = getFinanceContextTool.outputSchema.parse(financeContext);
 
-  assert.equal(parsedFinanceContext.today, '2026-05-12');
+  assert.equal(parsedFinanceContext.today, getCurrentDateString());
   assert.equal(parsedFinanceContext.currency, 'ARS');
   assert.deepEqual(parsedFinanceContext.availableDateRange, {
     from: '2026-03-15',

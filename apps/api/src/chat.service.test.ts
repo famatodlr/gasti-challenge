@@ -254,7 +254,7 @@ test('ChatService routes simple greeting intent to the greeting workflow', async
           assert.equal(input.message, 'Hola');
 
           return {
-            answer: 'Hola Franco 👋\nMayo viene arriba de abril comparable.',
+            answer: 'Hola 👋\nMayo viene arriba de abril comparable.',
             activityLabels: ['Detectando contexto', 'Armando respuesta'],
           };
         },
@@ -263,7 +263,7 @@ test('ChatService routes simple greeting intent to the greeting workflow', async
 
     assert.equal(
       await service.answer(memoryChatRequest(userConversation('Hola'))),
-      'Hola Franco 👋\nMayo viene arriba de abril comparable.',
+      'Hola 👋\nMayo viene arriba de abril comparable.',
     );
     assert.equal(greetingCalls, 1);
   } finally {

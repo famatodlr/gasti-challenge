@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { financeContextSchema, GASTI_REFERENCE_DATE, getFinanceContext } from './finance-context.ts';
+import { financeContextSchema, getFinanceContext } from './finance-context.ts';
 import { loadTransactions } from './transaction-repository.ts';
 
 const transactions = loadTransactions();
 
 test('builds finance context metadata from the available transaction dataset', () => {
-  const context = financeContextSchema.parse(getFinanceContext(transactions));
+  const context = financeContextSchema.parse(getFinanceContext(transactions, { today: '2026-05-14' }));
 
-  assert.equal(context.today, GASTI_REFERENCE_DATE);
+  assert.equal(context.today, '2026-05-14');
   assert.equal(context.currency, 'ARS');
   assert.deepEqual(context.availableDateRange, {
     from: '2026-03-15',
