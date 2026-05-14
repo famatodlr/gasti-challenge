@@ -131,5 +131,4 @@ bun run build
 
 - Ampliar la memoria financiera
 - Hacer alguna forma facil de borrar la memoria desde terminal
-- Mejorar la UI (hacerla blanca?)
 - Agregar semantic recall: Buscar recuerdos relevantes entre chats distintos. ?
