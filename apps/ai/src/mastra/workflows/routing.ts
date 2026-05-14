@@ -58,6 +58,8 @@ const financeQuestionSignals = [
   'review',
 ];
 
+const comparisonSignals = ['compar', 'contra', 'vs', 'versus', 'respecto de'];
+
 function normalizeForIntent(value: string): string {
   return value
     .normalize('NFD')
@@ -87,6 +89,12 @@ export function isMonthlyFinancialReviewIntent(message: string): boolean {
     /\b(resumen|review|revision|balance)\b/.test(normalizedMessage) ||
     /\bcomo me fue\b/.test(normalizedMessage) ||
     /\bmonthly review\b/.test(normalizedMessage);
+  const hasComparisonSignal = comparisonSignals.some((signal) => normalizedMessage.includes(normalizeForIntent(signal)));
+  const mentionedMonthCount = monthWords.filter((month) => new RegExp(`\\b${month}\\b`).test(normalizedMessage)).length;
+
+  if (hasComparisonSignal && mentionedMonthCount >= 2) {
+    return true;
+  }
 
   if (!hasReviewSignal) {
     return false;

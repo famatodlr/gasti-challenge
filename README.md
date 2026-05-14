@@ -7,7 +7,7 @@ Gasti es un asistente conversacional de finanzas personales pensado para explora
 - Chat sobre gastos, comparaciones, recurrencias y proyección de cierre de mes.
 - Datos mock locales en ARS.
 - Continuidad conversacional por thread con Mastra Memory local.
-- Memoria financiera estructurada para recordar contexto explícito del usuario demo.
+- Memoria financiera estructurada para recordar contexto explícito del usuario demo, con reset a estado vacío para la demo.
 
 ## Stack
 

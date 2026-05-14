@@ -308,12 +308,13 @@ test('ChatService keeps normal finance questions on the existing agent route', a
   }
 });
 
-test('ChatService does not route greeting workflow when the message contains a real finance question', async () => {
+test('ChatService routes month comparison prompts to the monthly workflow before falling back to the agent', async () => {
   const restoreEnv = useTestAiEnv();
   const restoreLoggerLog = silenceInfoLogs();
 
   try {
     let agentCalls = 0;
+    let monthlyWorkflowCalls = 0;
     const service = new ChatService(
       {
         generate: async () => {
@@ -324,7 +325,12 @@ test('ChatService does not route greeting workflow when the message contains a r
       },
       {
         runMonthlyReview: async () => {
-          throw new Error('monthly workflow should not be called');
+          monthlyWorkflowCalls += 1;
+
+          return {
+            answer: 'Comparé mayo hasta el 8 contra abril hasta el 8.',
+            activityLabels: ['Detectando período', 'Comparando contra el período anterior', 'Armando respuesta'],
+          };
         },
         runGreetingSnapshot: async () => {
           throw new Error('greeting workflow should not be called when there is a finance question');
@@ -333,10 +339,11 @@ test('ChatService does not route greeting workflow when the message contains a r
     );
 
     assert.equal(
-      await service.answer(memoryChatRequest(userConversation('Hola, comparame abril contra mayo'))),
-      'Comparación hecha por el agente.',
+      await service.answer(memoryChatRequest(userConversation('Hola, comparame mayo contra abril'))),
+      'Comparé mayo hasta el 8 contra abril hasta el 8.',
     );
-    assert.equal(agentCalls, 1);
+    assert.equal(monthlyWorkflowCalls, 1);
+    assert.equal(agentCalls, 0);
   } finally {
     restoreLoggerLog();
     restoreEnv();
@@ -1017,7 +1024,7 @@ test('ChatService renders structured output into final Markdown text in the publ
       }),
     });
 
-    const response = await service.answerWithSteps(memoryChatRequest(userConversation('Comparame mayo contra abril')));
+    const response = await service.answerWithSteps(memoryChatRequest(userConversation('¿Cuánto gasté en Rappi?')));
 
     assert.equal(
       response.answer,

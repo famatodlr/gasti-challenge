@@ -48,26 +48,10 @@ test('loads the deterministic financial memory fixture', () => {
 
   assert.equal(memory.resourceId, DEMO_USER_RESOURCE_ID);
   assert.equal(memory.currency, 'ARS');
-  assert.deepEqual(memory.knownIncome, [
-    {
-      label: 'Ingreso mensual',
-      amount: 1500000,
-      currency: 'ARS',
-      cadence: 'monthly',
-      source: 'user_stated',
-    },
-  ]);
+  assert.deepEqual(memory.knownIncome, []);
   assert.deepEqual(memory.fixedExpenses, []);
-  assert.deepEqual(memory.savingGoals, [
-    {
-      name: 'Viaje a Japón',
-      targetAmount: 1000000,
-      currency: 'ARS',
-      targetDate: '2025-01-01',
-      source: 'user_stated',
-    },
-  ]);
-  assert.deepEqual(memory.watchCategories, ['delivery']);
+  assert.deepEqual(memory.savingGoals, []);
+  assert.deepEqual(memory.watchCategories, []);
 });
 
 test('loads the immutable financial memory seed fixture', () => {
@@ -75,16 +59,8 @@ test('loads the immutable financial memory seed fixture', () => {
 
   assert.equal(memory.resourceId, DEMO_USER_RESOURCE_ID);
   assert.equal(memory.currency, 'ARS');
-  assert.deepEqual(memory.knownIncome, [
-    {
-      label: 'Ingreso mensual',
-      amount: 1500000,
-      currency: 'ARS',
-      cadence: 'monthly',
-      source: 'user_stated',
-    },
-  ]);
-  assert.deepEqual(memory.watchCategories, ['delivery']);
+  assert.deepEqual(memory.knownIncome, []);
+  assert.deepEqual(memory.watchCategories, []);
 });
 
 test('financial memory accepts delivery as a watch category', () => {

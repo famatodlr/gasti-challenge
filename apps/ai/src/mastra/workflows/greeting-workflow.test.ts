@@ -6,7 +6,7 @@ import {
   GREETING_NARRATOR_INSTRUCTIONS,
   runGreetingFinancialSnapshotWorkflow,
 } from './greeting-workflow.ts';
-import { isGreetingFinancialSnapshotIntent } from './routing.ts';
+import { detectGastiWorkflowIntent, isGreetingFinancialSnapshotIntent, isMonthlyFinancialReviewIntent } from './routing.ts';
 
 const deterministicAnswerGenerator = async ({
   snapshot,
@@ -24,6 +24,13 @@ test('greeting workflow detects simple greeting intent', () => {
 
 test('greeting workflow does not trigger when the greeting includes a finance question', () => {
   assert.equal(isGreetingFinancialSnapshotIntent('Hola, comparame abril contra mayo'), false);
+});
+
+test('monthly review intent detects month-to-month comparisons without requiring "resumen"', () => {
+  assert.equal(isMonthlyFinancialReviewIntent('Comparame mayo contra abril'), true);
+  assert.equal(isMonthlyFinancialReviewIntent('Compará mayo con abril'), true);
+  assert.equal(isMonthlyFinancialReviewIntent('Mayo vs abril'), true);
+  assert.equal(detectGastiWorkflowIntent('Comparame mayo contra abril'), 'monthly_review');
 });
 
 test('greeting workflow produces a short snapshot with at most two insights and one emoji', async () => {

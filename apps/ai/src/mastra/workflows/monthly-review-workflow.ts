@@ -230,6 +230,8 @@ Use real Markdown bullets with "- " for every multi-row financial breakdown, inc
 Never output bare bold-label rows like "**Vivienda:** ARS 250.000" outside a bullet list.
 Do not write giant paragraphs.
 Use restrained emojis only when they add clarity, usually in section titles or important bullets.
+Prefer sober visual cues like 📈, 📉, ⚠️, 💳, 👍, 👎, or plain + / - when useful.
+Avoid pointing-finger emojis in comparison bullets or category rows.
 Use at most two genuinely relevant follow-up questions.`;
 
 const workflowNarratorAgent = new Agent({
@@ -324,7 +326,7 @@ Escribí la respuesta final para el usuario. Si hay clarification, pedí esa acl
     return buildDeterministicMonthlyReviewAnswer({ review, clarification });
   }
 
-  return generatedAnswer;
+  return normalizeWorkflowNarratorAnswer(generatedAnswer);
 }
 
 export function resolveMonthlyReviewPeriod(
@@ -735,6 +737,18 @@ function buildComparisonSentence(review: MonthlyReviewResult): string {
     return 'No tengo un período anterior comparable suficiente para contrastarlo.';
   }
 
+  if (comparison.comparisonMode === 'same-day-of-month' && review.period.isPartial) {
+    const toDay = review.period.comparableDay ?? Number(review.period.range.to.slice(-2));
+    const partialLead = `Comparé ${monthNames[review.period.month - 1]} hasta el ${toDay} contra ${comparison.previousPeriodLabel}.`;
+
+    if (comparison.percentageDifference === null) {
+      return `${partialLead} La diferencia es de **${formatARS(Math.abs(comparison.absoluteDifference))}**.`;
+    }
+
+    const direction = comparison.absoluteDifference >= 0 ? 'arriba' : 'abajo';
+    return `${partialLead} Eso está **${formatPercent(Math.abs(comparison.percentageDifference))} ${direction}** en el tramo comparable.`;
+  }
+
   if (comparison.percentageDifference === null) {
     return `La diferencia contra ${comparison.previousPeriodLabel} es de **${formatARS(
       Math.abs(comparison.absoluteDifference),
@@ -781,7 +795,9 @@ function resolveTargetMonth(
   }
 
   mentionedMonths.sort((a, b) => a.index - b.index);
-  const targetMonth = mentionedMonths[mentionedMonths.length - 1].month;
+  const targetMonth = isMonthComparisonPrompt(normalizedMessage) && mentionedMonths.length >= 2
+    ? mentionedMonths[0].month
+    : mentionedMonths[mentionedMonths.length - 1].month;
   const explicitYear = normalizedMessage.match(/\b(20\d{2})\b/)?.[1];
 
   return {
@@ -855,10 +871,10 @@ function buildRecurringDetectionRange(
   transactions: readonly Transaction[],
   period: z.infer<typeof monthlyReviewPeriodSchema>,
 ): DateRange {
-  const earliestDate = transactions[0]?.date ?? period.range.from;
+  const earliestDate = transactions.map((transaction) => transaction.date).sort(compareISODate)[0] ?? period.range.from;
 
   return {
-    from: earliestDate,
+    from: minISODate(earliestDate, period.range.to),
     to: period.range.to,
   };
 }
@@ -970,6 +986,24 @@ function normalizeText(value: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('es-AR');
+}
+
+function isMonthComparisonPrompt(normalizedMessage: string): boolean {
+  return (
+    /\bcompar/.test(normalizedMessage) ||
+    /\bcontra\b/.test(normalizedMessage) ||
+    /\bvs\b/.test(normalizedMessage) ||
+    /\bversus\b/.test(normalizedMessage)
+  );
+}
+
+function normalizeWorkflowNarratorAnswer(value: string): string {
+  return value
+    .replace(/\s*[👇👆👉👈]\s*:/gu, ':')
+    .replace(/[👇👆👉👈]/gu, '')
+    .replace(/[ \t]+:\s*/g, ': ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 function minISODate(a: string, b: string): string {

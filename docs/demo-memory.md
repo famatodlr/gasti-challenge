@@ -17,6 +17,7 @@ Esto permite que un thread conserve contexto sin que la UI tenga que reenviar to
 - Estado runtime: `data/financial-memory.json`
 - Seed base inmutable: `data/financial-memory.seed.json`
 - Función: guardar contexto financiero explícito y estable del usuario demo
+- Estado inicial de demo: semilla vacía, sin ingresos, metas ni categorías vigiladas precargadas
 
 Ejemplos de lo que puede vivir ahí:
 
@@ -39,6 +40,7 @@ bun run demo:reset-memory
   - `apps/ai/.mastra/memory.db-shm`
   - `apps/ai/.mastra/memory.db-wal`
 - Restaura `data/financial-memory.json` desde `data/financial-memory.seed.json`
+- Después del reset, `¿Qué recordás de mí?` no debería mencionar metas o datos demo previos
 
 Solo memoria conversacional:
 
@@ -55,6 +57,7 @@ bun run demo:reset-memory:financial
 ```
 
 - Restaura únicamente `data/financial-memory.json` desde el seed base.
+- Ese seed base hoy representa una memoria financiera vacía.
 
 ## Qué no resetea
 

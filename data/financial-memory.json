@@ -17,13 +17,12 @@
       "name": "Viaje a Japón",
       "targetAmount": 1000000,
       "currency": "ARS",
-      "targetDate": "2025-01-01",
+      "targetDate": "2027-12-31",
+      "monthlyContributionTarget": 52632,
       "source": "user_stated"
     }
   ],
-  "watchCategories": [
-    "delivery"
-  ],
+  "watchCategories": [],
   "recurringObservations": [],
   "preferences": {
     "preferredLanguage": "es-AR",

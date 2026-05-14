@@ -18,19 +18,7 @@ function createTemporaryResetPaths(): { paths: DemoMemoryResetPaths; cleanup: ()
 
   mkdirSync(conversationDirectory, { recursive: true });
 
-  const seedMemory = {
-    ...createEmptyFinancialMemory(),
-    knownIncome: [
-      {
-        label: 'Ingreso mensual',
-        amount: 1500000,
-        currency: 'ARS' as const,
-        cadence: 'monthly' as const,
-        source: 'user_stated' as const,
-      },
-    ],
-    watchCategories: ['delivery'],
-  };
+  const seedMemory = createEmptyFinancialMemory();
 
   writeFileSync(financialSeedPath, `${JSON.stringify(seedMemory, null, 2)}\n`);
   writeFileSync(
@@ -88,6 +76,22 @@ test('resetDemoMemory restores the financial memory file from the immutable seed
       readFileSync(temporaryResetPaths.paths.financialStatePath, 'utf8'),
       readFileSync(temporaryResetPaths.paths.financialSeedPath, 'utf8'),
     );
+  } finally {
+    temporaryResetPaths.cleanup();
+  }
+});
+
+test('resetDemoMemory restores an empty financial memory seed without prior demo facts', () => {
+  const temporaryResetPaths = createTemporaryResetPaths();
+
+  try {
+    resetDemoMemory('all', temporaryResetPaths.paths);
+
+    const restoredMemory = JSON.parse(readFileSync(temporaryResetPaths.paths.financialStatePath, 'utf8'));
+    assert.deepEqual(restoredMemory.knownIncome, []);
+    assert.deepEqual(restoredMemory.savingGoals, []);
+    assert.deepEqual(restoredMemory.watchCategories, []);
+    assert.deepEqual(restoredMemory.recurringObservations, []);
   } finally {
     temporaryResetPaths.cleanup();
   }

@@ -114,7 +114,7 @@ z.object({
 
 Notes:
 
-- `today` uses the configured demo reference date.
+- `today` uses the current system date at runtime.
 - `availableDateRange` is derived from the minimum and maximum transaction dates.
 - `availableMonths` includes only months that have transactions.
 - The tool must not return raw transaction rows.
