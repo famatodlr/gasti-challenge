@@ -5,6 +5,15 @@ import { forecastMonthEndSpend } from '../domain/analytics.ts';
 import { loadTransactions } from '../domain/transaction-repository.ts';
 import { categorySchema, dateRangeSchema } from '../domain/transaction.ts';
 
+const periodMetaSchema = z.object({
+  dayCount: z.number(),
+  spansSingleMonth: z.boolean(),
+  isFullCalendarMonth: z.boolean(),
+  isMonthToDate: z.boolean(),
+  completeness: z.enum(['complete', 'partial']),
+  partialReason: z.enum(['latest_dataset_month_to_date']).optional(),
+});
+
 export const forecastMonthEndSpendTool = createTool({
   id: 'forecastMonthEndSpendTool',
   description: 'Project ARS month-end spend from observed month-to-date transactions and visible assumptions.',
@@ -17,6 +26,7 @@ export const forecastMonthEndSpendTool = createTool({
   }),
   outputSchema: z.object({
     periodObserved: dateRangeSchema,
+    periodMeta: periodMetaSchema,
     currency: z.literal('ARS'),
     observedSpend: z.number(),
     observedFixedSpend: z.number(),
@@ -33,6 +43,16 @@ export const forecastMonthEndSpendTool = createTool({
     monthlyIncome: z.number().optional(),
     projectedSavingsOrDeficit: z.number().optional(),
     targetGap: z.number().optional(),
+    projectionBasis: z.object({
+      mode: z.literal('month_to_date_run_rate'),
+      observedDayCount: z.number(),
+      remainingDayCount: z.number(),
+      fixedCategoriesExcludedFromRunRate: z.array(categorySchema),
+    }),
+    drivers: z.object({
+      fixedSharePct: z.number(),
+      variableSharePct: z.number(),
+    }),
     assumptions: z.array(z.string()),
     confidence: z.enum(['high', 'medium', 'low']),
   }),

@@ -29,6 +29,11 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedSpendingSummary.transactionCount, 15);
   assert.equal(parsedSpendingSummary.groups[0]?.key, 'vivienda');
   assert.deepEqual(
+    parsedSpendingSummary.topGroups.map((group) => group.key),
+    ['vivienda', 'salud', 'compras'],
+  );
+  assert.equal(parsedSpendingSummary.topMerchants[0]?.key, 'Propietario');
+  assert.deepEqual(
     parsedSpendingSummary.groups.map((group) => group.key),
     [
       'vivienda',
@@ -54,6 +59,11 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
 
   assert.equal(parsedFoundTransactions.currency, 'ARS');
   assert.equal(parsedFoundTransactions.transactionCount, 2);
+  assert.equal(parsedFoundTransactions.filters.query, 'Netflix');
+  assert.equal(parsedFoundTransactions.filters.limit, 2);
+  assert.equal(parsedFoundTransactions.summary.transactionCount, 2);
+  assert.equal(parsedFoundTransactions.summary.uniqueMerchants, 1);
+  assert.deepEqual(parsedFoundTransactions.summary.amountRange, { min: 5499, max: 5499 });
   assert.deepEqual(
     parsedFoundTransactions.transactions.map((transaction) => ({
       id: transaction.id,
@@ -79,6 +89,8 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedComparison.current.total, 499698);
   assert.equal(parsedComparison.baseline.total, 618987);
   assert.equal(parsedComparison.delta.direction, 'down');
+  assert.equal(parsedComparison.comparisonBasis.sameLength, false);
+  assert.equal(parsedComparison.topMovers[0]?.key, 'servicios');
 
   const recurringExpenses = await executeTool(detectRecurringExpensesTool, {
     from: '2026-03-15',
@@ -88,6 +100,8 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
 
   assert.equal(parsedRecurringExpenses.currency, 'ARS');
   assert.equal(parsedRecurringExpenses.estimatedMonthlyCommittedSpend, 344048);
+  assert.equal(parsedRecurringExpenses.summary.committedMonthlyTotal, 344048);
+  assert.ok(parsedRecurringExpenses.items.some((item) => item.classification === 'compromiso'));
   assert.ok(parsedRecurringExpenses.items.some((item) => item.merchant === 'Netflix'));
 
   const monthEndForecast = await executeTool(forecastMonthEndSpendTool, {
@@ -100,6 +114,7 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedMonthEndForecast.observedSpend, 499698);
   assert.equal(parsedMonthEndForecast.projectedMonthEndSpend, 1109773);
   assert.equal(parsedMonthEndForecast.confidence, 'medium');
+  assert.equal(parsedMonthEndForecast.projectionBasis.mode, 'month_to_date_run_rate');
 });
 
 test('getFinanceContextTool exposes dataset metadata without raw transactions', async () => {
@@ -212,6 +227,48 @@ test('April questions can resolve to the dataset year from finance context', asy
   assert.equal(aprilSummary.period.to, '2026-04-30');
   assert.equal(aprilSummary.transactionCount, 32);
   assert.notEqual(aprilSummary.total, 0);
+});
+
+test('May 2026 exists in dataset metadata and Netflix has matching transactions in that period', async () => {
+  const financeContext = getFinanceContextTool.outputSchema.parse(await executeTool(getFinanceContextTool, {}));
+  const may = financeContext.availableMonths.find((month) => month.label === 'mayo de 2026');
+
+  assert.ok(may);
+  assert.equal(financeContext.availableDateRange.to, '2026-05-08');
+
+  const mayNetflixTransactions = findTransactionsTool.outputSchema.parse(
+    await executeTool(findTransactionsTool, {
+      from: may.from,
+      to: financeContext.availableDateRange.to,
+      query: 'Netflix',
+      sortBy: 'date_desc',
+      limit: 10,
+    }),
+  );
+
+  assert.equal(mayNetflixTransactions.period.from, '2026-05-01');
+  assert.equal(mayNetflixTransactions.period.to, '2026-05-08');
+  assert.equal(mayNetflixTransactions.periodMeta.completeness, 'partial');
+  assert.equal(mayNetflixTransactions.periodMeta.partialReason, 'latest_dataset_month_to_date');
+  assert.ok(mayNetflixTransactions.transactionCount > 0);
+  assert.ok(mayNetflixTransactions.transactions.every((transaction) => transaction.date.startsWith('2026-05')));
+});
+
+test('zero-match transaction searches stay grounded in the requested 2026 range', async () => {
+  const noMatches = findTransactionsTool.outputSchema.parse(
+    await executeTool(findTransactionsTool, {
+      from: '2026-05-01',
+      to: '2026-05-08',
+      query: 'MerchantThatDoesNotExist',
+      sortBy: 'date_desc',
+      limit: 10,
+    }),
+  );
+
+  assert.deepEqual(noMatches.period, { from: '2026-05-01', to: '2026-05-08' });
+  assert.equal(noMatches.transactionCount, 0);
+  assert.equal(noMatches.summary.transactionCount, 0);
+  assert.equal(noMatches.transactions.length, 0);
 });
 
 test('single-range finance tools require strict top-level date inputs', () => {

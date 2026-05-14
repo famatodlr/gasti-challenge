@@ -70,6 +70,15 @@ test('summarizes May spending with category groups and top transactions', () => 
     ],
   );
   assert.equal(summary.topTransactions[0]?.id, 'txn_014');
+  assert.equal(summary.periodMeta.dayCount, 8);
+  assert.equal(summary.periodMeta.spansSingleMonth, true);
+  assert.equal(summary.periodMeta.isFullCalendarMonth, false);
+  assert.equal(summary.periodMeta.isMonthToDate, true);
+  assert.equal(summary.periodMeta.completeness, 'partial');
+  assert.equal(summary.periodMeta.partialReason, 'latest_dataset_month_to_date');
+  assert.equal(summary.topGroups.length, 3);
+  assert.equal(summary.topMerchants[0]?.key, 'Propietario');
+  assert.equal(summary.highlights.largestTransaction?.id, 'txn_014');
   assert.equal(formatARS(summary.total), 'ARS 499.698');
 });
 
@@ -86,6 +95,13 @@ test('compares full April with May to date and exposes a partial-period caveat',
   assert.equal(comparison.delta.direction, 'down');
   assert.ok(comparison.caveats.some((caveat) => caveat.includes('different lengths')));
   assert.equal(comparison.groups.find((group) => group.key === 'salud')?.deltaAmount, 56500);
+  assert.equal(comparison.current.periodMeta.completeness, 'partial');
+  assert.equal(comparison.baseline.periodMeta.isFullCalendarMonth, true);
+  assert.equal(comparison.comparisonBasis.mode, 'exact_ranges');
+  assert.equal(comparison.comparisonBasis.sameLength, false);
+  assert.equal(comparison.comparisonBasis.currentLabel, 'mayo de 2026 (1 al 8)');
+  assert.equal(comparison.comparisonBasis.baselineLabel, 'abril de 2026');
+  assert.equal(comparison.topMovers.length, 3);
 });
 
 test('detects repeated subscriptions and fixed bills as recurring expenses', () => {
@@ -103,6 +119,15 @@ test('detects repeated subscriptions and fixed bills as recurring expenses', () 
   assert.equal(recurring.estimatedMonthlyCommittedSpend, 344048);
   assert.equal(recurring.items.find((item) => item.merchant === 'Netflix')?.confidence, 'high');
   assert.equal(recurring.items.find((item) => item.merchant === 'Spotify')?.cadence, 'monthly');
+  assert.equal(recurring.periodMeta.dayCount, 55);
+  assert.equal(recurring.summary.committedMonthlyTotal, 344048);
+  assert.ok(recurring.summary.highConfidenceCount > 0);
+  assert.equal(recurring.items.find((item) => item.merchant === 'Netflix')?.classification, 'compromiso');
+  assert.equal(recurring.items.find((item) => item.merchant === 'Rappi')?.classification, 'repeticion_variable');
+  assert.equal(recurring.items.find((item) => item.merchant === 'Netflix')?.occurrenceCount, 2);
+  assert.deepEqual(recurring.items.find((item) => item.merchant === 'Netflix')?.occurrenceIds, ['txn_008', 'txn_044']);
+  assert.equal(recurring.items.find((item) => item.merchant === 'Netflix')?.firstSeen, '2026-04-04');
+  assert.equal(recurring.items.find((item) => item.merchant === 'Netflix')?.lastSeen, '2026-05-05');
 
   for (const merchant of variableRepeatMerchants) {
     assert.ok(merchants.includes(merchant));
@@ -133,4 +158,9 @@ test('forecasts May month-end spend as of 2026-05-08', () => {
   assert.equal(forecast.projectedVariableSpend, 822275);
   assert.equal(forecast.projectedMonthEndSpend, 1109773);
   assert.equal(forecast.confidence, 'medium');
+  assert.equal(forecast.periodMeta.completeness, 'partial');
+  assert.equal(forecast.projectionBasis.mode, 'month_to_date_run_rate');
+  assert.equal(forecast.projectionBasis.observedDayCount, 8);
+  assert.equal(forecast.projectionBasis.remainingDayCount, 23);
+  assert.equal(Math.round(forecast.drivers.fixedSharePct + forecast.drivers.variableSharePct), 100);
 });

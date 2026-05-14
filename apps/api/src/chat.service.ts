@@ -13,10 +13,14 @@ import {
   DEMO_RESOURCE_ID,
   GastiModelFallbackExhaustedError,
   LOCAL_DEMO_DEFAULT_THREAD_ID,
+  buildGastiResponseMarkdown,
+  buildSafeGastiResponseFallback,
   detectGastiWorkflowIntent,
+  gastiStructuredResponseSchema,
   generateGastiFinanceAgent,
   getGastiModelFallbackChain,
   isGastiQuotaOrRateLimitError,
+  normalizeGastiStructuredResponse,
   runGreetingFinancialSnapshotWorkflow,
   runMonthlyFinancialReviewWorkflow,
   streamGastiFinanceAgent,
@@ -37,6 +41,7 @@ type AgentMemoryContext = {
 
 type AgentGenerateOptions = {
   disableMemory?: boolean;
+  experimental_output?: unknown;
   maxSteps?: number;
   memory?: AgentMemoryContext;
   modelId?: string;
@@ -45,6 +50,7 @@ type AgentGenerateOptions = {
 type AgentStreamOptions = AgentGenerateOptions;
 
 type AgentGenerateResult = {
+  object?: unknown;
   text: string;
   finishReason?: unknown;
   steps?: unknown;
@@ -335,6 +341,27 @@ function buildAgentGenerationMetadata(
   };
 }
 
+function resolveFinalAnswerText(result: AgentGenerateResult): string | null {
+  const structuredResponse = normalizeGastiStructuredResponse(result.object);
+
+  if (structuredResponse) {
+    return buildGastiResponseMarkdown(structuredResponse);
+  }
+
+  const hasStructuredAttempt = Object.prototype.hasOwnProperty.call(result, 'object');
+  const trimmedText = result.text.trim();
+
+  if (trimmedText) {
+    return buildSafeGastiResponseFallback(result.text);
+  }
+
+  return hasStructuredAttempt ? buildSafeGastiResponseFallback() : null;
+}
+
+function normalizePublicAnswer(answer: string): string {
+  return buildSafeGastiResponseFallback(answer);
+}
+
 function createActivityEvent(
   type: ChatActivityEvent['type'],
   label: string,
@@ -594,14 +621,15 @@ export class ChatService {
     try {
       if (workflowIntent !== 'agent') {
         const workflowResult = await this.runWorkflow(workflowIntent, lastMessage?.content ?? '');
+        const answer = normalizePublicAnswer(workflowResult.answer);
 
         for (const label of workflowResult.activityLabels) {
           activity.addStatus(label);
         }
 
-        activity.addFinalAnswer(workflowResult.answer);
+        activity.addFinalAnswer(answer);
 
-        return { answer: workflowResult.answer, steps: activity.collectedEvents };
+        return { answer, steps: activity.collectedEvents };
       }
 
       const answer = await this.generateAnswerWithModelFallback(
@@ -689,12 +717,13 @@ export class ChatService {
     try {
       if (workflowIntent !== 'agent') {
         const workflowResult = await this.runWorkflow(workflowIntent, lastMessage?.content ?? '');
+        const answer = normalizePublicAnswer(workflowResult.answer);
 
         for (const label of workflowResult.activityLabels) {
           yield createActivityEvent('status', label);
         }
 
-        yield createActivityEvent('final_answer', ACTIVITY_FINAL_ANSWER_LABEL, { answer: workflowResult.answer });
+        yield createActivityEvent('final_answer', ACTIVITY_FINAL_ANSWER_LABEL, { answer });
         return;
       }
 
@@ -901,10 +930,13 @@ export class ChatService {
       generateOptions.disableMemory = true;
     }
 
+    generateOptions.experimental_output = gastiStructuredResponseSchema;
+
     const result = await this.agent.generate(messages, generateOptions);
+    const finalAnswer = resolveFinalAnswerText(result);
     const generation = buildAgentGenerationMetadata(result, messages, modelId);
 
-    if (!result.text.trim()) {
+    if (!finalAnswer?.trim()) {
       this.logger.warn({
         event: 'chat.model_attempt_empty',
         message: 'Gemini model attempt returned an empty answer',
@@ -928,14 +960,14 @@ export class ChatService {
       attempt,
       modelIndex: modelIndex + 1,
       modelCount,
-      responseLength: result.text.length,
+      responseLength: finalAnswer.length,
       mode,
       memoryUsed: Boolean(memory),
       ...requestMetadata,
       ...generation,
     });
 
-    return result.text;
+    return finalAnswer;
   }
 
   private async *streamAnswerWithInvalidToolRetry(
@@ -1184,9 +1216,10 @@ export class ChatService {
       }
     }
 
-    const generation = buildAgentGenerationMetadata({ text: answer }, messages, modelId);
+    const finalAnswer = normalizePublicAnswer(answer);
+    const generation = buildAgentGenerationMetadata({ text: finalAnswer }, messages, modelId);
 
-    if (!answer.trim()) {
+    if (!finalAnswer.trim()) {
       this.logger.warn({
         event: 'chat.model_attempt_empty',
         message: 'Gemini model attempt returned an empty answer',
@@ -1215,9 +1248,9 @@ export class ChatService {
       ...generation,
     });
 
-    yield activity.addFinalAnswer(answer);
+    yield activity.addFinalAnswer(finalAnswer);
 
-    return answer;
+    return finalAnswer;
   }
 
   private throwEmptyAnswerExhausted(
