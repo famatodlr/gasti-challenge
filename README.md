@@ -129,24 +129,7 @@ bun run build
 
 ## To do:
 
-- Pulir/mejorar/auditar lo que devuelven las tools para que sea informacion mas digerida y menos compleja
 - Ampliar la memoria financiera
 - Hacer alguna forma facil de borrar la memoria desde terminal
 - Mejorar la UI (hacerla blanca?)
-- Hacer un responsable builder deterministico para que el modelo solo escriba el contenido de la respuesa, por ejemplo :
-
-```bash
-{
-  "headline": "Mayo viene más alto que abril",
-  "summary": "Hasta el 13/05 gastaste...",
-  "bullets": [
-    "Delivery explica la mayor suba",
-    "Salud también aumentó",
-    "Transporte subió levemente"
-  ],
-  "suggestedQuestion": "¿Querés ver los comercios que más empujaron la suba?"
-}
-```
-
 - Agregar semantic recall: Buscar recuerdos relevantes entre chats distintos. ?
-- Auditoría/evals/tests de comportamiento del agente
