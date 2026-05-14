@@ -110,12 +110,6 @@ test('createActivityFeedItems preserves warning, error, and final answer states'
         status: 'error',
         type: 'error',
       },
-      {
-        id: 'final_answer-2',
-        label: 'Respuesta final generada',
-        status: 'complete',
-        type: 'final_answer',
-      },
     ],
   );
 });
@@ -126,6 +120,30 @@ test('createActivityFeedItems uses the compact generating response label', () =>
     [
       {
         id: 'status-0',
+        label: 'Generando respuesta',
+        status: 'active',
+        type: 'status',
+      },
+    ],
+  );
+});
+
+test('createActivityFeedItems collapses repeated status events', () => {
+  assert.deepEqual(
+    createActivityFeedItems([
+      { type: 'status', label: 'Analizando consulta' },
+      { type: 'status', label: 'Analizando consulta' },
+      { type: 'status', label: 'Generando respuesta final' },
+    ]),
+    [
+      {
+        id: 'status-0',
+        label: 'Analizando consulta',
+        status: 'complete',
+        type: 'status',
+      },
+      {
+        id: 'status-2',
         label: 'Generando respuesta',
         status: 'active',
         type: 'status',

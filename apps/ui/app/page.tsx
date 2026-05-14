@@ -8,9 +8,9 @@ import {
   normalizeActivityEvent,
   normalizeActivityEvents,
   type ActivityEvent,
-  type ActivityFeedStatus,
 } from '@/lib/activity';
-import { AssistantMarkdown, PlainChatText } from '@/lib/assistant-markdown';
+import { normalizeAnswerUi, type AssistantAnswerUi, PlainChatText } from '@/lib/assistant-markdown';
+import { ActivityRail, AssistantMessageCard } from '@/lib/chat-ui';
 import { buildChatRequestPayload } from './chat-request';
 
 type ChatRole = 'user' | 'assistant';
@@ -19,11 +19,13 @@ type ChatMessage = {
   id: string;
   role: ChatRole;
   content: string;
+  answerUi?: AssistantAnswerUi | null;
 };
 
 type ChatResponse = {
   answer?: unknown;
   steps?: unknown;
+  answerUi?: unknown;
   error?: unknown;
 };
 
@@ -86,52 +88,6 @@ function getErrorMessage(payload: ChatResponse | null): string {
   return 'No pude conectar con Gasti. Revisá que el backend esté corriendo e intentá de nuevo.';
 }
 
-function formatActivityTime(timestamp: string | undefined): string {
-  if (!timestamp) {
-    return '';
-  }
-
-  const date = new Date(timestamp);
-
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-
-  return date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-function activityLabelClass(status: ActivityFeedStatus): string {
-  if (status === 'error') {
-    return 'text-[#ff9ba3]';
-  }
-
-  if (status === 'warning') {
-    return 'text-[#f0c56b]';
-  }
-
-  if (status === 'active') {
-    return 'text-[#f7fff8]';
-  }
-
-  return 'text-[#94a098]';
-}
-
-function activityDotClass(status: ActivityFeedStatus): string {
-  if (status === 'error') {
-    return 'border-[#ff9ba3] bg-[#ff6b75] shadow-[0_0_0_4px_rgba(255,107,117,0.08)]';
-  }
-
-  if (status === 'warning') {
-    return 'border-[#f0c56b] bg-[#f0c56b] shadow-[0_0_0_4px_rgba(240,197,107,0.08)]';
-  }
-
-  if (status === 'active') {
-    return 'border-[#d9ff99] bg-[#b7f56a] shadow-[0_0_0_5px_rgba(163,230,53,0.12)]';
-  }
-
-  return 'border-[#3b4740] bg-[#111713]';
-}
-
 export default function Page() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [latestActivity, setLatestActivity] = useState<ActivityEvent[]>([]);
@@ -187,7 +143,10 @@ export default function Page() {
     }
 
     setLatestActivity(normalizeActivityEvents(payload.steps));
-    setMessages((currentMessages) => [...currentMessages, createMessage('assistant', payload.answer as string)]);
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      { ...createMessage('assistant', payload.answer as string), answerUi: normalizeAnswerUi(payload.answerUi) },
+    ]);
   }
 
   async function sendStreamingMessage(content: string): Promise<boolean> {
@@ -206,6 +165,7 @@ export default function Page() {
     let buffer = '';
     let receivedEvent = false;
     let finalAnswer = '';
+    let finalAnswerUi: AssistantAnswerUi | null = null;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -247,6 +207,7 @@ export default function Page() {
 
         if (event.type === 'final_answer' && typeof event.answer === 'string') {
           finalAnswer = event.answer;
+          finalAnswerUi = normalizeAnswerUi(event.answerUi);
         }
       }
 
@@ -263,7 +224,7 @@ export default function Page() {
       throw new Error('Gasti no devolvió una respuesta final.');
     }
 
-    setMessages((currentMessages) => [...currentMessages, createMessage('assistant', finalAnswer)]);
+    setMessages((currentMessages) => [...currentMessages, { ...createMessage('assistant', finalAnswer), answerUi: finalAnswerUi }]);
     return true;
   }
 
@@ -308,6 +269,7 @@ export default function Page() {
 
     setThreadId(nextThreadId);
     setMessages(initialMessages);
+    setLatestActivity([]);
     setInput('');
     setError(null);
   }
@@ -318,9 +280,9 @@ export default function Page() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#050706] px-3 py-4 text-[#edf2ee] sm:px-5 lg:px-7">
-      <section className="mx-auto flex min-h-[calc(100vh-32px)] w-full max-w-6xl flex-col gap-4 lg:h-[calc(100vh-32px)] lg:min-h-[700px]">
-        <header className="rounded-lg border border-[#202822] bg-[#0b0f0c] px-4 py-3 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:px-5">
+    <main className="min-h-screen overflow-x-hidden bg-[var(--bg-base)] px-3 py-4 text-[var(--text-primary)] sm:px-5 lg:px-7">
+      <section className="mx-auto flex min-h-[calc(100vh-32px)] w-full max-w-7xl flex-col gap-4 lg:h-[calc(100vh-32px)] lg:min-h-[700px]">
+        <header className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] px-4 py-3 shadow-[var(--shadow-lg)] sm:px-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-4">
               <Image
@@ -331,11 +293,11 @@ export default function Page() {
                 priority
                 className="h-auto w-[136px] shrink-0 sm:w-[154px]"
               />
-              <div className="hidden h-9 w-px bg-[#243028] sm:block" aria-hidden="true" />
+              <div className="hidden h-9 w-px bg-[var(--border-subtle)] sm:block" aria-hidden="true" />
               <div className="min-w-0">
                 <h1 className="sr-only">Gasti</h1>
-                <p className="truncate text-sm font-medium text-[#dfe8e1]">Tu asistente financiero</p>
-                <p className="mt-0.5 text-xs text-[#77817a]">Conversaciones sobre gastos en ARS</p>
+                <p className="truncate text-sm font-medium text-[var(--text-secondary)]">Tu asistente financiero</p>
+                <p className="mt-0.5 text-xs text-[var(--text-dim)]">Conversaciones sobre gastos en ARS</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -343,28 +305,28 @@ export default function Page() {
                 type="button"
                 onClick={startNewChat}
                 disabled={isLoading}
-                className="rounded-md border border-[#27322a] bg-[#101611] px-3 py-2 text-xs font-semibold text-[#b9c5bd] transition-colors hover:border-[#a3e635]/60 hover:text-[#d9ff99] focus-visible:border-[#a3e635]/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#a3e635]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:border-[var(--border-soft)] hover:text-[var(--text-primary)] focus-visible:border-[var(--accent-primary)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--ring-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Nuevo chat
               </button>
-              <div className="flex items-center gap-2 text-xs font-medium text-[#93a093]">
-                <span className="h-2 w-2 rounded-full bg-[#a3e635] shadow-[0_0_0_4px_rgba(163,230,53,0.08)]" />
+              <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-dim)]">
+                <span className="h-2 w-2 rounded-full bg-[var(--accent-primary)] shadow-[0_0_0_4px_rgba(167,201,107,0.12)]" />
                 En línea
               </div>
             </div>
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="flex min-h-[560px] flex-col overflow-hidden rounded-lg border border-[#202822] bg-[#0b0f0c] shadow-[0_24px_80px_rgba(0,0,0,0.35)] lg:min-h-0">
-            <div className="flex items-center justify-between gap-3 border-b border-[#202822] px-4 py-3 sm:px-5">
+        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_270px] xl:grid-cols-[minmax(0,1fr)_290px]">
+          <section className="flex min-h-[560px] flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] shadow-[var(--shadow-lg)] lg:min-h-0">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3 sm:px-5">
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-[#f7fff8]">Chat financiero</h2>
-                <p className="mt-0.5 truncate text-xs text-[#77817a]">
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">Chat financiero</h2>
+                <p className="mt-0.5 truncate text-xs text-[var(--text-dim)]">
                   Consultas sobre gastos, recurrencias y proyecciones
                 </p>
               </div>
-              <div className="shrink-0 rounded-full border border-[#a3e635]/20 bg-[#a3e635]/10 px-2.5 py-1 text-xs font-semibold text-[#bef264]">
+              <div className="shrink-0 rounded-full border border-[color:color-mix(in_srgb,var(--accent-primary),transparent_70%)] bg-[color:color-mix(in_srgb,var(--accent-primary),transparent_88%)] px-2.5 py-1 text-xs font-semibold text-[var(--accent-primary)]">
                 Live
               </div>
             </div>
@@ -377,16 +339,20 @@ export default function Page() {
                   return (
                     <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                       <div
-                        className={`max-w-[90%] break-words rounded-lg px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[74%] ${
+                        className={`max-w-[90%] break-words text-sm leading-6 sm:max-w-[78%] ${
                           isUser
-                            ? 'whitespace-pre-wrap rounded-br-sm border border-[#9bdc4f]/25 bg-[#1d3216] text-[#f6ffe8]'
-                            : 'rounded-bl-sm border border-[#252e28] bg-[#111713] text-[#dde5df]'
+                            ? 'whitespace-pre-wrap rounded-2xl rounded-br-md border border-[var(--border-soft)] bg-[var(--surface-2)] px-4 py-3 text-[var(--text-primary)] shadow-[0_8px_24px_rgba(0,0,0,0.2)]'
+                            : ''
                         }`}
                       >
                         {isUser ? (
                           <PlainChatText content={message.content} />
                         ) : (
-                          <AssistantMarkdown content={message.content} />
+                          <AssistantMessageCard
+                            content={message.content}
+                            answerUi={message.answerUi}
+                            onSuggestedQuestionClick={(question) => void sendMessage(question)}
+                          />
                         )}
                       </div>
                     </div>
@@ -395,7 +361,7 @@ export default function Page() {
 
                 {isLoading ? (
                   <div className="flex justify-start" aria-live="polite">
-                    <div className="rounded-lg rounded-bl-sm border border-[#252e28] bg-[#111713] px-4 py-3 text-sm text-[#8f9a92] shadow-sm">
+                    <div className="rounded-2xl rounded-bl-md border border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--text-muted)] shadow-sm">
                       Procesando…
                     </div>
                   </div>
@@ -405,10 +371,10 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="border-t border-[#202822] bg-[#090d0a] px-4 py-4 sm:px-5">
+            <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-4 sm:px-5">
               {error ? (
                 <div
-                  className="mb-3 rounded-md border border-[#7f2c32] bg-[#2a1216] px-3 py-2 text-sm text-[#ff9ba3]"
+                  className="mb-3 rounded-md border border-[color:color-mix(in_srgb,var(--state-error),transparent_46%)] bg-[color:color-mix(in_srgb,var(--state-error),transparent_86%)] px-3 py-2 text-sm text-[var(--state-error)]"
                   role="alert"
                 >
                   {error}
@@ -422,14 +388,17 @@ export default function Page() {
                     type="button"
                     onClick={() => void sendMessage(question)}
                     disabled={isLoading}
-                    className="rounded-full border border-[#27322a] bg-[#101611] px-3 py-2 text-left text-xs text-[#b9c5bd] transition-colors hover:border-[#a3e635]/60 hover:text-[#d9ff99] focus-visible:border-[#a3e635]/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#a3e635]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-2)] px-3.5 py-2 text-left text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--border-soft)] hover:text-[var(--text-primary)] focus-visible:border-[var(--accent-primary)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--ring-focus)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {question}
                   </button>
                 ))}
               </div>
 
-              <form onSubmit={handleSubmit} className="flex flex-col gap-2 sm:flex-row">
+              <form
+                onSubmit={handleSubmit}
+                className="flex flex-col gap-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-2)] p-2.5 shadow-[inset_0_1px_0_rgba(242,241,236,0.03)] sm:flex-row"
+              >
                 <input
                   name="message"
                   aria-label="Mensaje para Gasti"
@@ -438,12 +407,12 @@ export default function Page() {
                   onChange={(event) => setInput(event.target.value)}
                   disabled={isLoading}
                   placeholder="Preguntá por tus gastos…"
-                  className="min-w-0 flex-1 rounded-md border border-[#27322a] bg-[#0f1511] px-4 py-3 text-sm text-[#f4f8f5] outline-none transition-colors placeholder:text-[#667069] focus:border-[#a3e635]/70 focus:ring-4 focus:ring-[#a3e635]/10 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="min-w-0 flex-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-3)] px-4 py-3 text-sm text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-dim)] focus:border-[var(--accent-active)] focus:ring-4 focus:ring-[var(--ring-focus)] disabled:cursor-not-allowed disabled:opacity-70"
                 />
                 <button
                   type="submit"
                   disabled={isLoading || input.trim().length === 0}
-                  className="rounded-md border border-[#b7f56a]/20 bg-[#a3e635] px-5 py-3 text-sm font-semibold text-[#102006] transition-colors hover:bg-[#bef264] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#a3e635]/20 disabled:cursor-not-allowed disabled:border-[#3b443d] disabled:bg-[#27322a] disabled:text-[#78837b] sm:w-auto"
+                  className="rounded-xl border border-[color:color-mix(in_srgb,var(--accent-primary),transparent_55%)] bg-[var(--accent-primary)] px-5 py-3 text-sm font-semibold text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-hover)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--ring-focus)] disabled:cursor-not-allowed disabled:border-[var(--border-subtle)] disabled:bg-[var(--surface-3)] disabled:text-[var(--text-dim)] sm:w-auto"
                 >
                   Enviar
                 </button>
@@ -451,70 +420,8 @@ export default function Page() {
             </div>
           </section>
 
-          <aside className="flex min-h-[320px] max-h-[440px] flex-col overflow-hidden rounded-lg border border-[#202822] bg-[#0b0f0c] shadow-[0_24px_80px_rgba(0,0,0,0.28)] lg:max-h-none">
-            <div className="border-b border-[#202822] px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-[#f7fff8]">Actividad del agente</h2>
-                  <p className="mt-0.5 text-xs text-[#77817a]">
-                    {isLoading ? 'En curso' : latestActivity.length > 0 ? 'Última respuesta' : 'En espera'}
-                  </p>
-                </div>
-                {activityItems.length > 0 ? (
-                  <span className="shrink-0 text-xs font-medium text-[#79847d]">
-                    {activityItems.length === 1 ? '1 paso' : `${activityItems.length} pasos`}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
-              {activityItems.length === 0 ? (
-                <div className="flex h-full min-h-[220px] items-center justify-center px-4 text-center text-sm leading-6 text-[#6f7a72]">
-                  La actividad aparecerá cuando Gasti procese tu próxima consulta.
-                </div>
-              ) : (
-                <ol className="space-y-0">
-                  {activityItems.map((item, index) => {
-                    const time = formatActivityTime(item.timestamp);
-
-                    return (
-                      <li key={item.id} className="relative flex gap-3 pb-4 last:pb-0">
-                        <div className="relative flex w-4 shrink-0 justify-center">
-                          {index < activityItems.length - 1 ? (
-                            <span
-                              className="absolute bottom-[-1rem] top-4 w-px bg-[#1f2923]"
-                              aria-hidden="true"
-                            />
-                          ) : null}
-                          <span
-                            className={`relative z-10 mt-1 h-2.5 w-2.5 rounded-full border ${activityDotClass(
-                              item.status,
-                            )}`}
-                            aria-hidden="true"
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1 pb-0.5">
-                          <div className="flex items-start justify-between gap-3">
-                            <p className={`break-words text-sm font-medium leading-5 ${activityLabelClass(item.status)}`}>
-                              {item.label}
-                            </p>
-                            {time ? (
-                              <span className="shrink-0 pt-0.5 text-[11px] leading-4 text-[#637069]">{time}</span>
-                            ) : null}
-                          </div>
-                          {item.detail ? (
-                            <p className="mt-1 break-words font-mono text-[11px] leading-4 text-[#69746d]">
-                              {item.detail}
-                            </p>
-                          ) : null}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-            </div>
+          <aside className="order-last lg:order-none">
+            <ActivityRail items={activityItems} isLoading={isLoading} />
           </aside>
         </div>
       </section>

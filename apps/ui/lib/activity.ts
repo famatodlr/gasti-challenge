@@ -6,6 +6,7 @@ export type ActivityEvent = {
   toolName?: string;
   timestamp?: string;
   answer?: string;
+  answerUi?: unknown;
 };
 
 export type ActivityFeedStatus = 'active' | 'complete' | 'warning' | 'error';
@@ -87,6 +88,10 @@ export function normalizeActivityEvent(value: unknown): ActivityEvent | null {
     event.answer = value.answer;
   }
 
+  if (Object.prototype.hasOwnProperty.call(value, 'answerUi')) {
+    event.answerUi = value.answerUi;
+  }
+
   return event;
 }
 
@@ -101,8 +106,13 @@ export function normalizeActivityEvents(value: unknown): ActivityEvent[] {
 export function createActivityFeedItems(events: readonly ActivityEvent[]): ActivityFeedItem[] {
   const items: ActivityFeedItem[] = [];
   const pendingToolIndexes = new Map<string, number>();
+  let previousStatusLabel = '';
 
   events.forEach((event, index) => {
+    if (event.type === 'final_answer') {
+      return;
+    }
+
     if (event.type === 'tool_call') {
       const key = toolKey(event, index);
 
@@ -185,6 +195,10 @@ export function createActivityFeedItems(events: readonly ActivityEvent[]): Activ
       return;
     }
 
+    if (event.type === 'status' && event.label === previousStatusLabel) {
+      return;
+    }
+
     items.push(
       withOptionalDetails(
         {
@@ -196,6 +210,10 @@ export function createActivityFeedItems(events: readonly ActivityEvent[]): Activ
         event,
       ),
     );
+
+    if (event.type === 'status') {
+      previousStatusLabel = event.label;
+    }
   });
 
   const lastItem = items.at(-1);
