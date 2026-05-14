@@ -6,6 +6,24 @@ import { loadTransactions } from '../domain/transaction-repository.ts';
 import { categorySchema, dateRangeSchema, transactionSchema } from '../domain/transaction.ts';
 import { addDateRangeOrderValidation, flatDateRangeFields, toDateRange } from './date-input.ts';
 
+const periodMetaSchema = z.object({
+  dayCount: z.number(),
+  spansSingleMonth: z.boolean(),
+  isFullCalendarMonth: z.boolean(),
+  isMonthToDate: z.boolean(),
+  completeness: z.enum(['complete', 'partial']),
+  partialReason: z.enum(['latest_dataset_month_to_date']).optional(),
+});
+
+const spendingGroupSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  total: z.number(),
+  count: z.number(),
+  sharePct: z.number(),
+  transactionIds: z.array(z.string()),
+});
+
 const spendingSummaryInputSchema = addDateRangeOrderValidation(
   z
     .object({
@@ -26,19 +44,26 @@ export const spendingSummaryTool = createTool({
   inputSchema: spendingSummaryInputSchema,
   outputSchema: z.object({
     period: dateRangeSchema,
+    periodMeta: periodMetaSchema,
     currency: z.literal('ARS'),
     total: z.number(),
     transactionCount: z.number(),
-    groups: z.array(
-      z.object({
-        key: z.string(),
-        label: z.string(),
-        total: z.number(),
-        count: z.number(),
-        sharePct: z.number(),
-        transactionIds: z.array(z.string()),
-      }),
-    ),
+    groups: z.array(spendingGroupSchema),
+    topGroups: z.array(spendingGroupSchema),
+    topMerchants: z.array(spendingGroupSchema),
+    highlights: z.object({
+      dominantGroup: spendingGroupSchema.optional(),
+      dominantMerchant: spendingGroupSchema.optional(),
+      largestTransaction: z
+        .object({
+          id: z.string(),
+          merchant: z.string(),
+          category: categorySchema,
+          amount: z.number(),
+          date: z.string(),
+        })
+        .optional(),
+    }),
     topTransactions: z.array(transactionSchema),
     assumptions: z.array(z.string()),
   }),

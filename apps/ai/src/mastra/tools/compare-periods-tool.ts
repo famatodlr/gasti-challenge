@@ -6,6 +6,25 @@ import { loadTransactions } from '../domain/transaction-repository.ts';
 import { categorySchema, dateRangeSchema } from '../domain/transaction.ts';
 import { addDateRangeOrderValidation, compareDateRangeFields, toCompareDateRanges } from './date-input.ts';
 
+const periodMetaSchema = z.object({
+  dayCount: z.number(),
+  spansSingleMonth: z.boolean(),
+  isFullCalendarMonth: z.boolean(),
+  isMonthToDate: z.boolean(),
+  completeness: z.enum(['complete', 'partial']),
+  partialReason: z.enum(['latest_dataset_month_to_date']).optional(),
+});
+
+const comparisonGroupSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  currentTotal: z.number(),
+  baselineTotal: z.number(),
+  deltaAmount: z.number(),
+  deltaPercent: z.number().nullable(),
+  driverTransactionIds: z.array(z.string()),
+});
+
 const comparePeriodsInputSchema = addDateRangeOrderValidation(
   z
     .object({
@@ -28,11 +47,13 @@ export const comparePeriodsTool = createTool({
     currency: z.literal('ARS'),
     current: z.object({
       period: dateRangeSchema,
+      periodMeta: periodMetaSchema,
       total: z.number(),
       transactionCount: z.number(),
     }),
     baseline: z.object({
       period: dateRangeSchema,
+      periodMeta: periodMetaSchema,
       total: z.number(),
       transactionCount: z.number(),
     }),
@@ -41,12 +62,21 @@ export const comparePeriodsTool = createTool({
       percent: z.number().nullable(),
       direction: z.enum(['up', 'down', 'flat']),
     }),
-    groups: z.array(
+    groups: z.array(comparisonGroupSchema),
+    comparisonBasis: z.object({
+      mode: z.literal('exact_ranges'),
+      currentLabel: z.string(),
+      baselineLabel: z.string(),
+      currentDayCount: z.number(),
+      baselineDayCount: z.number(),
+      sameLength: z.boolean(),
+      normalized: z.literal(false),
+    }),
+    topMovers: z.array(
       z.object({
         key: z.string(),
         label: z.string(),
-        currentTotal: z.number(),
-        baselineTotal: z.number(),
+        direction: z.enum(['up', 'down', 'flat']),
         deltaAmount: z.number(),
         deltaPercent: z.number().nullable(),
         driverTransactionIds: z.array(z.string()),

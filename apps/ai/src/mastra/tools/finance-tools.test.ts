@@ -29,6 +29,11 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedSpendingSummary.transactionCount, 15);
   assert.equal(parsedSpendingSummary.groups[0]?.key, 'vivienda');
   assert.deepEqual(
+    parsedSpendingSummary.topGroups.map((group) => group.key),
+    ['vivienda', 'salud', 'compras'],
+  );
+  assert.equal(parsedSpendingSummary.topMerchants[0]?.key, 'Propietario');
+  assert.deepEqual(
     parsedSpendingSummary.groups.map((group) => group.key),
     [
       'vivienda',
@@ -54,6 +59,11 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
 
   assert.equal(parsedFoundTransactions.currency, 'ARS');
   assert.equal(parsedFoundTransactions.transactionCount, 2);
+  assert.equal(parsedFoundTransactions.filters.query, 'Netflix');
+  assert.equal(parsedFoundTransactions.filters.limit, 2);
+  assert.equal(parsedFoundTransactions.summary.transactionCount, 2);
+  assert.equal(parsedFoundTransactions.summary.uniqueMerchants, 1);
+  assert.deepEqual(parsedFoundTransactions.summary.amountRange, { min: 5499, max: 5499 });
   assert.deepEqual(
     parsedFoundTransactions.transactions.map((transaction) => ({
       id: transaction.id,
@@ -79,6 +89,8 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedComparison.current.total, 499698);
   assert.equal(parsedComparison.baseline.total, 618987);
   assert.equal(parsedComparison.delta.direction, 'down');
+  assert.equal(parsedComparison.comparisonBasis.sameLength, false);
+  assert.equal(parsedComparison.topMovers[0]?.key, 'servicios');
 
   const recurringExpenses = await executeTool(detectRecurringExpensesTool, {
     from: '2026-03-15',
@@ -88,6 +100,8 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
 
   assert.equal(parsedRecurringExpenses.currency, 'ARS');
   assert.equal(parsedRecurringExpenses.estimatedMonthlyCommittedSpend, 344048);
+  assert.equal(parsedRecurringExpenses.summary.committedMonthlyTotal, 344048);
+  assert.ok(parsedRecurringExpenses.items.some((item) => item.classification === 'compromiso'));
   assert.ok(parsedRecurringExpenses.items.some((item) => item.merchant === 'Netflix'));
 
   const monthEndForecast = await executeTool(forecastMonthEndSpendTool, {
@@ -100,6 +114,7 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedMonthEndForecast.observedSpend, 499698);
   assert.equal(parsedMonthEndForecast.projectedMonthEndSpend, 1109773);
   assert.equal(parsedMonthEndForecast.confidence, 'medium');
+  assert.equal(parsedMonthEndForecast.projectionBasis.mode, 'month_to_date_run_rate');
 });
 
 test('getFinanceContextTool exposes dataset metadata without raw transactions', async () => {

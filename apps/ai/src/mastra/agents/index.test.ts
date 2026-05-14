@@ -138,6 +138,14 @@ test('Gasti agent instructions guide period summaries and follow-ups', () => {
   assert.match(GASTI_AGENT_INSTRUCTIONS, /no generic disclaimers/i);
 });
 
+test('Gasti agent instructions mention partial-period and comparison-basis handling', () => {
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /periodMeta/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /month-to-date|partial period/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /comparisonBasis/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /sameLength/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /avoid implying a full like-for-like month comparison/i);
+});
+
 test('conversation memory database path is independent of process cwd', () => {
   const originalCwd = process.cwd();
 

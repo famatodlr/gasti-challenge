@@ -21,6 +21,17 @@ export type TransactionSortBy = 'date_desc' | 'amount_desc' | 'amount_asc';
 export type DeltaDirection = 'up' | 'down' | 'flat';
 export type RecurringCadence = 'monthly' | 'weekly' | 'irregular_repeat';
 export type Confidence = 'high' | 'medium' | 'low';
+export type PeriodCompleteness = 'complete' | 'partial';
+export type PeriodPartialReason = 'latest_dataset_month_to_date';
+
+export type PeriodMeta = {
+  dayCount: number;
+  spansSingleMonth: boolean;
+  isFullCalendarMonth: boolean;
+  isMonthToDate: boolean;
+  completeness: PeriodCompleteness;
+  partialReason?: PeriodPartialReason;
+};
 
 export type SummarizeSpendingInput = {
   dateRange?: DateRange;
@@ -42,10 +53,18 @@ export type SpendingSummaryGroup = {
 
 export type SpendingSummary = {
   period: DateRange;
+  periodMeta: PeriodMeta;
   currency: 'ARS';
   total: number;
   transactionCount: number;
   groups: SpendingSummaryGroup[];
+  topGroups: SpendingSummaryGroup[];
+  topMerchants: SpendingSummaryGroup[];
+  highlights: {
+    dominantGroup?: SpendingSummaryGroup;
+    dominantMerchant?: SpendingSummaryGroup;
+    largestTransaction?: Pick<Transaction, 'id' | 'merchant' | 'category' | 'amount' | 'date'>;
+  };
   topTransactions: Transaction[];
   assumptions: string[];
 };
@@ -63,10 +82,32 @@ export type FindTransactionsInput = {
 
 export type FindTransactionsResult = {
   period: DateRange;
+  periodMeta: PeriodMeta;
   currency: 'ARS';
   filtersApplied: string[];
+  filters: {
+    dateRange?: DateRange;
+    categories?: Category[];
+    merchants?: string[];
+    query?: string;
+    minAmount?: number;
+    maxAmount?: number;
+    sortBy: TransactionSortBy;
+    limit: number;
+  };
   total: number;
   transactionCount: number;
+  summary: {
+    total: number;
+    transactionCount: number;
+    uniqueMerchants: number;
+    topCategories: SpendingSummaryGroup[];
+    topMerchants: SpendingSummaryGroup[];
+    amountRange: {
+      min: number;
+      max: number;
+    };
+  };
   transactions: Transaction[];
 };
 
@@ -79,6 +120,7 @@ export type ComparePeriodsInput = {
 
 export type PeriodSummary = {
   period: DateRange;
+  periodMeta: PeriodMeta;
   total: number;
   transactionCount: number;
 };
@@ -97,6 +139,23 @@ export type PeriodComparison = {
     label: string;
     currentTotal: number;
     baselineTotal: number;
+    deltaAmount: number;
+    deltaPercent: number | null;
+    driverTransactionIds: string[];
+  }>;
+  comparisonBasis: {
+    mode: 'exact_ranges';
+    currentLabel: string;
+    baselineLabel: string;
+    currentDayCount: number;
+    baselineDayCount: number;
+    sameLength: boolean;
+    normalized: false;
+  };
+  topMovers: Array<{
+    key: string;
+    label: string;
+    direction: DeltaDirection;
     deltaAmount: number;
     deltaPercent: number | null;
     driverTransactionIds: string[];
@@ -121,12 +180,25 @@ export type RecurringExpenseItem = {
   confidence: Confidence;
   reason: string;
   possibleZombie: boolean;
+  occurrenceCount: number;
+  firstSeen: string;
+  lastSeen: string;
+  classification: 'compromiso' | 'repeticion_variable';
+  occurrenceIds: string[];
 };
 
 export type RecurringExpensesResult = {
   period: DateRange;
+  periodMeta: PeriodMeta;
   currency: 'ARS';
   estimatedMonthlyCommittedSpend: number;
+  summary: {
+    committedMonthlyTotal: number;
+    highConfidenceCount: number;
+    possibleZombieCount: number;
+    fixedLikeCount: number;
+    variableRepeatCount: number;
+  };
   items: RecurringExpenseItem[];
   caveats: string[];
 };
@@ -141,6 +213,7 @@ export type ForecastMonthEndSpendInput = {
 
 export type ForecastMonthEndSpendResult = {
   periodObserved: DateRange;
+  periodMeta: PeriodMeta;
   currency: 'ARS';
   observedSpend: number;
   observedFixedSpend: number;
@@ -157,6 +230,16 @@ export type ForecastMonthEndSpendResult = {
   monthlyIncome?: number;
   projectedSavingsOrDeficit?: number;
   targetGap?: number;
+  projectionBasis: {
+    mode: 'month_to_date_run_rate';
+    observedDayCount: number;
+    remainingDayCount: number;
+    fixedCategoriesExcludedFromRunRate: Category[];
+  };
+  drivers: {
+    fixedSharePct: number;
+    variableSharePct: number;
+  };
   assumptions: string[];
   confidence: Confidence;
 };
@@ -188,16 +271,27 @@ export function summarizeSpending(
   const period = resolvePeriod(transactions, input.dateRange);
   const filteredTransactions = filterTransactions(transactions, input);
   const total = sumTransactions(filteredTransactions);
+  const groups = buildSummaryGroups(filteredTransactions, groupBy, total);
+  const topMerchants = sliceTopGroups(buildSummaryGroups(filteredTransactions, 'merchant', total));
+  const sortedTopTransactions = includeTopTransactions
+    ? [...filteredTransactions].sort((a, b) => b.amount - a.amount || sortTransactionsDescending(a, b)).slice(0, topTransactionLimit)
+    : [];
 
   return {
     period,
+    periodMeta: buildPeriodMeta(period, transactions),
     currency: 'ARS',
     total,
     transactionCount: filteredTransactions.length,
-    groups: buildSummaryGroups(filteredTransactions, groupBy, total),
-    topTransactions: includeTopTransactions
-      ? [...filteredTransactions].sort((a, b) => b.amount - a.amount || sortTransactionsDescending(a, b)).slice(0, topTransactionLimit)
-      : [],
+    groups,
+    topGroups: sliceTopGroups(groups),
+    topMerchants,
+    highlights: {
+      dominantGroup: groups[0],
+      dominantMerchant: topMerchants[0],
+      largestTransaction: buildLargestTransactionHighlight(filteredTransactions),
+    },
+    topTransactions: sortedTopTransactions,
     assumptions: buildFilterAssumptions(input),
   };
 }
@@ -207,16 +301,37 @@ export function findTransactions(
   input: FindTransactionsInput = {},
 ): FindTransactionsResult {
   const limit = clampInteger(input.limit ?? 10, 1, 25);
+  const sortBy = input.sortBy ?? 'date_desc';
   const period = resolvePeriod(transactions, input.dateRange);
   const filteredTransactions = filterTransactions(transactions, input);
-  const sortedTransactions = sortFoundTransactions(filteredTransactions, input.sortBy ?? 'date_desc').slice(0, limit);
+  const sortedTransactions = sortFoundTransactions(filteredTransactions, sortBy).slice(0, limit);
+  const total = sumTransactions(filteredTransactions);
 
   return {
     period,
+    periodMeta: buildPeriodMeta(period, transactions),
     currency: 'ARS',
     filtersApplied: buildFiltersApplied(input),
-    total: sumTransactions(filteredTransactions),
+    filters: {
+      ...(input.dateRange ? { dateRange: input.dateRange } : {}),
+      ...(input.categories?.length ? { categories: input.categories } : {}),
+      ...(input.merchants?.length ? { merchants: input.merchants } : {}),
+      ...(input.query ? { query: input.query } : {}),
+      ...(input.minAmount !== undefined ? { minAmount: input.minAmount } : {}),
+      ...(input.maxAmount !== undefined ? { maxAmount: input.maxAmount } : {}),
+      sortBy,
+      limit,
+    },
+    total,
     transactionCount: filteredTransactions.length,
+    summary: {
+      total,
+      transactionCount: filteredTransactions.length,
+      uniqueMerchants: countUniqueMerchants(filteredTransactions),
+      topCategories: sliceTopGroups(buildSummaryGroups(filteredTransactions, 'category', total)),
+      topMerchants: sliceTopGroups(buildSummaryGroups(filteredTransactions, 'merchant', total)),
+      amountRange: buildAmountRange(filteredTransactions),
+    },
     transactions: sortedTransactions,
   };
 }
@@ -231,16 +346,21 @@ export function comparePeriods(transactions: readonly Transaction[], input: Comp
   const currentTotal = sumTransactions(currentTransactions);
   const baselineTotal = sumTransactions(baselineTransactions);
   const deltaAmount = currentTotal - baselineTotal;
+  const groups = buildComparisonGroups(currentTransactions, baselineTransactions, groupBy);
+  const currentPeriodMeta = buildPeriodMeta(currentRange, transactions);
+  const baselinePeriodMeta = buildPeriodMeta(baselineRange, transactions);
 
   return {
     currency: 'ARS',
     current: {
       period: currentRange,
+      periodMeta: currentPeriodMeta,
       total: currentTotal,
       transactionCount: currentTransactions.length,
     },
     baseline: {
       period: baselineRange,
+      periodMeta: baselinePeriodMeta,
       total: baselineTotal,
       transactionCount: baselineTransactions.length,
     },
@@ -249,7 +369,24 @@ export function comparePeriods(transactions: readonly Transaction[], input: Comp
       percent: calculatePercentDelta(deltaAmount, baselineTotal),
       direction: getDeltaDirection(deltaAmount),
     },
-    groups: buildComparisonGroups(currentTransactions, baselineTransactions, groupBy),
+    groups,
+    comparisonBasis: {
+      mode: 'exact_ranges',
+      currentLabel: buildDateRangeLabel(currentRange, currentPeriodMeta),
+      baselineLabel: buildDateRangeLabel(baselineRange, baselinePeriodMeta),
+      currentDayCount: currentPeriodMeta.dayCount,
+      baselineDayCount: baselinePeriodMeta.dayCount,
+      sameLength: currentPeriodMeta.dayCount === baselinePeriodMeta.dayCount,
+      normalized: false,
+    },
+    topMovers: groups.slice(0, 3).map((group) => ({
+      key: group.key,
+      label: group.label,
+      direction: getDeltaDirection(group.deltaAmount),
+      deltaAmount: group.deltaAmount,
+      deltaPercent: group.deltaPercent,
+      driverTransactionIds: group.driverTransactionIds,
+    })),
     caveats: buildComparisonCaveats(currentRange, baselineRange),
   };
 }
@@ -283,13 +420,22 @@ export function detectRecurringExpenses(
       return [buildRecurringItem(merchant, sortedOccurrences, isFixedHint)];
     })
     .sort((a, b) => b.estimatedMonthlyAmount - a.estimatedMonthlyAmount || a.merchant.localeCompare(b.merchant));
+  const committedMonthlyTotal = items
+    .filter((item) => item.classification === 'compromiso')
+    .reduce((total, item) => total + item.estimatedMonthlyAmount, 0);
 
   return {
     period,
+    periodMeta: buildPeriodMeta(period, transactions),
     currency: 'ARS',
-    estimatedMonthlyCommittedSpend: items
-      .filter(isCommittedRecurringItem)
-      .reduce((total, item) => total + item.estimatedMonthlyAmount, 0),
+    estimatedMonthlyCommittedSpend: committedMonthlyTotal,
+    summary: {
+      committedMonthlyTotal,
+      highConfidenceCount: items.filter((item) => item.confidence === 'high').length,
+      possibleZombieCount: items.filter((item) => item.possibleZombie).length,
+      fixedLikeCount: items.filter((item) => item.classification === 'compromiso').length,
+      variableRepeatCount: items.filter((item) => item.classification === 'repeticion_variable').length,
+    },
     items,
     caveats: [
       'Recurring detection is heuristic because the mock dataset covers roughly two months.',
@@ -325,6 +471,7 @@ export function forecastMonthEndSpend(
   };
   const result: ForecastMonthEndSpendResult = {
     periodObserved,
+    periodMeta: buildPeriodMeta(periodObserved, transactions),
     currency: 'ARS',
     observedSpend,
     observedFixedSpend,
@@ -335,6 +482,16 @@ export function forecastMonthEndSpend(
     projectedVariableSpend,
     projectedMonthEndSpend,
     projectedRange,
+    projectionBasis: {
+      mode: 'month_to_date_run_rate',
+      observedDayCount: elapsedDays,
+      remainingDayCount: Math.max(daysInMonth - elapsedDays, 0),
+      fixedCategoriesExcludedFromRunRate: fixedCategories,
+    },
+    drivers: {
+      fixedSharePct: observedSpend === 0 ? 0 : roundToTwo((observedFixedSpend / observedSpend) * 100),
+      variableSharePct: observedSpend === 0 ? 0 : roundToTwo((observedVariableSpend / observedSpend) * 100),
+    },
     assumptions: [
       `Fixed spend uses categories ${fixedCategories.join(', ')} plus known fixed merchants such as Propietario.`,
       `Variable spend is projected from ${elapsedDays} observed day${elapsedDays === 1 ? '' : 's'} in ${input.month}.`,
@@ -361,6 +518,35 @@ function resolvePeriod(transactions: readonly Transaction[], dateRange?: DateRan
   }
 
   return getTransactionDateRange(transactions);
+}
+
+function buildPeriodMeta(period: DateRange, transactions: readonly Transaction[]): PeriodMeta {
+  const latestTransactionDate = getTransactionDateRange(transactions).to;
+  const latestTransactionMonth = latestTransactionDate.slice(0, 7);
+  const periodMonth = period.from.slice(0, 7);
+  const spansSingleMonth = periodMonth === period.to.slice(0, 7);
+  const fullMonthRange = spansSingleMonth ? getMonthDateRange(periodMonth) : undefined;
+  const isFullCalendarMonth = spansSingleMonth && period.from === fullMonthRange?.from && period.to === fullMonthRange.to;
+  const latestDateInPeriodMonth =
+    spansSingleMonth
+      ? transactions
+          .filter((transaction) => transaction.date.startsWith(periodMonth))
+          .map((transaction) => transaction.date)
+          .sort(compareISODate)
+          .at(-1)
+      : undefined;
+  const isMonthToDate =
+    spansSingleMonth && period.from.endsWith('-01') && latestDateInPeriodMonth !== undefined && period.to === latestDateInPeriodMonth;
+  const isLatestDatasetMonthToDate = isMonthToDate && periodMonth === latestTransactionMonth && period.to === latestTransactionDate;
+
+  return {
+    dayCount: countInclusiveDays(period),
+    spansSingleMonth,
+    isFullCalendarMonth,
+    isMonthToDate,
+    completeness: isLatestDatasetMonthToDate ? 'partial' : 'complete',
+    ...(isLatestDatasetMonthToDate ? { partialReason: 'latest_dataset_month_to_date' as const } : {}),
+  };
 }
 
 function filterTransactions(
@@ -409,6 +595,44 @@ function filterTransactions(
 
     return true;
   });
+}
+
+function buildLargestTransactionHighlight(
+  transactions: readonly Transaction[],
+): Pick<Transaction, 'id' | 'merchant' | 'category' | 'amount' | 'date'> | undefined {
+  const largestTransaction = [...transactions].sort((a, b) => b.amount - a.amount || sortTransactionsDescending(a, b))[0];
+
+  if (!largestTransaction) {
+    return undefined;
+  }
+
+  return {
+    id: largestTransaction.id,
+    merchant: largestTransaction.merchant,
+    category: largestTransaction.category,
+    amount: largestTransaction.amount,
+    date: largestTransaction.date,
+  };
+}
+
+function sliceTopGroups(groups: readonly SpendingSummaryGroup[], limit = 3): SpendingSummaryGroup[] {
+  return groups.slice(0, limit);
+}
+
+function buildAmountRange(transactions: readonly Transaction[]): { min: number; max: number } {
+  if (transactions.length === 0) {
+    return { min: 0, max: 0 };
+  }
+
+  const amounts = transactions.map((transaction) => transaction.amount);
+  return {
+    min: Math.min(...amounts),
+    max: Math.max(...amounts),
+  };
+}
+
+function countUniqueMerchants(transactions: readonly Transaction[]): number {
+  return new Set(transactions.map((transaction) => transaction.merchant)).size;
 }
 
 function buildSummaryGroups(
@@ -497,6 +721,25 @@ function buildComparisonCaveats(currentRange: DateRange, baselineRange: DateRang
   return [`Periods have different lengths: current has ${currentDays} days and baseline has ${baselineDays} days.`];
 }
 
+function buildDateRangeLabel(range: DateRange, periodMeta: PeriodMeta): string {
+  if (!periodMeta.spansSingleMonth) {
+    return `${range.from} al ${range.to}`;
+  }
+
+  const [year, month] = range.from.split('-').map(Number);
+  const monthLabel = formatMonthLabel(year, month);
+
+  if (periodMeta.isFullCalendarMonth) {
+    return monthLabel;
+  }
+
+  if (periodMeta.isMonthToDate) {
+    return `${monthLabel} (1 al ${Number(range.to.slice(-2))})`;
+  }
+
+  return `${range.from} al ${range.to}`;
+}
+
 function buildRecurringItem(
   merchant: string,
   occurrences: Transaction[],
@@ -511,22 +754,34 @@ function buildRecurringItem(
   const amountSimilarity = calculateAmountSimilarity(amounts);
   const confidence = inferRecurringConfidence(cadence, amountSimilarity, isFixedHint, occurrences.length);
   const estimatedMonthlyAmount = estimateMonthlyAmount(averageAmount, cadence, occurrences);
-
-  return {
+  const sortedOccurrences = [...occurrences].sort(sortTransactionsDescending);
+  const baseItem = {
     merchant,
     category: latest.category,
     cadence,
     latestAmount: latest.amount,
     averageAmount,
     estimatedMonthlyAmount,
-    occurrences: [...occurrences].sort(sortTransactionsDescending),
+    occurrences: sortedOccurrences,
     confidence,
     reason: buildRecurringReason(cadence, occurrences.length, amountSimilarity, isFixedHint),
     possibleZombie: latest.category === 'suscripciones' && confidence !== 'high',
   };
+  const classification = isCommittedRecurringItem(baseItem) ? 'compromiso' : 'repeticion_variable';
+
+  return {
+    ...baseItem,
+    occurrenceCount: sortedOccurrences.length,
+    firstSeen: occurrences[0]?.date ?? latest.date,
+    lastSeen: latest.date,
+    classification,
+    occurrenceIds: sortedOccurrences.map((transaction) => transaction.id),
+  };
 }
 
-function isCommittedRecurringItem(item: RecurringExpenseItem): boolean {
+function isCommittedRecurringItem(
+  item: Pick<RecurringExpenseItem, 'category' | 'merchant' | 'confidence' | 'cadence'>,
+): boolean {
   const hasFixedSignal = fixedCategoryHints.has(item.category) || isFixedMerchant(item.merchant);
 
   if (!hasFixedSignal || item.confidence === 'low') {
@@ -751,6 +1006,14 @@ function isFixedMerchant(merchant: string): boolean {
 
 function isForecastFixedMerchant(merchant: string): boolean {
   return forecastFixedMerchantHints.has(normalizeText(merchant));
+}
+
+function formatMonthLabel(year: number, month: number): string {
+  return new Intl.DateTimeFormat('es-AR', {
+    month: 'long',
+    timeZone: 'UTC',
+    year: 'numeric',
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
 function normalizeText(value: string): string {
