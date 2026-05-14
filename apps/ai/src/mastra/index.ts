@@ -1,3 +1,4 @@
+import './load-root-env.ts';
 import { Mastra } from '@mastra/core';
 import { gastiFinanceAgent } from './agents/index.ts';
 import {

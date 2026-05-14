@@ -24,11 +24,19 @@ Prerequisitos:
 - Bun
 - `GEMINI_API_KEY`
 
-Configurar la API key:
+Configurar variables de entorno (archivo unico en la raiz):
 
 ```bash
-export GEMINI_API_KEY="your-google-ai-studio-key"
+cp .env.example .env
 ```
+
+Editar `.env` y completar:
+
+```bash
+GEMINI_API_KEY=your-google-ai-studio-key
+```
+
+No commitear claves reales.
 
 Instalar dependencias:
 
