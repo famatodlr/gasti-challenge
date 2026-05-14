@@ -6,7 +6,7 @@ import {
   GREETING_NARRATOR_INSTRUCTIONS,
   runGreetingFinancialSnapshotWorkflow,
 } from './greeting-workflow.ts';
-import { isGreetingFinancialSnapshotIntent } from './routing.ts';
+import { detectGastiWorkflowIntent, isGreetingFinancialSnapshotIntent, isMonthlyFinancialReviewIntent } from './routing.ts';
 
 const deterministicAnswerGenerator = async ({
   snapshot,
@@ -26,6 +26,18 @@ test('greeting workflow does not trigger when the greeting includes a finance qu
   assert.equal(isGreetingFinancialSnapshotIntent('Hola, comparame abril contra mayo'), false);
 });
 
+test('monthly review intent detects month-to-month comparisons without requiring "resumen"', () => {
+  assert.equal(isMonthlyFinancialReviewIntent('Comparame mayo contra abril'), true);
+  assert.equal(isMonthlyFinancialReviewIntent('Compará mayo con abril'), true);
+  assert.equal(isMonthlyFinancialReviewIntent('Mayo vs abril'), true);
+  assert.equal(detectGastiWorkflowIntent('Comparame mayo contra abril'), 'monthly_review');
+});
+
+test('forecast prompts route to agent instead of monthly review', () => {
+  assert.equal(isMonthlyFinancialReviewIntent('Proyectá mi gasto de este mes'), false);
+  assert.equal(detectGastiWorkflowIntent('Proyectá mi gasto de este mes'), 'agent');
+});
+
 test('greeting workflow produces a short snapshot with at most two insights and one emoji', async () => {
   const result = await runGreetingFinancialSnapshotWorkflow(
     { message: 'Hola', currentDate: '2026-05-13' },
@@ -36,7 +48,8 @@ test('greeting workflow produces a short snapshot with at most two insights and 
   assert.ok(result.snapshot.insights.length <= 2);
   assert.ok(result.answer.length < 420);
   assert.ok(countLikelyEmoji(result.answer) <= 1);
-  assert.match(result.answer, /^Hola Franco/);
+  assert.match(result.answer, /^Hola\b/);
+  assert.doesNotMatch(result.answer, /Franco/);
   assert.match(result.answer, /\*\*ARS 499\.698\*\*/);
   assert.match(result.answer, /¿[^?\n]+\?/);
 });
@@ -68,11 +81,11 @@ test('greeting workflow appends fallback activity label when narrator retries mo
     {
       answerGenerator: async ({ onActivityLabel }) => {
         onActivityLabel?.('Reintentando con otro modelo');
-        return 'Hola Franco 👋';
+        return 'Hola 👋';
       },
     },
   );
 
-  assert.equal(result.answer, 'Hola Franco 👋');
+  assert.equal(result.answer, 'Hola 👋');
   assert.deepEqual(result.activityLabels.at(-1), 'Reintentando con otro modelo');
 });

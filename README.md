@@ -1,50 +1,34 @@
 # Gasti
 
-Gasti es un asistente conversacional de finanzas personales. Analiza transacciones mock locales en ARS y responde preguntas sobre gastos, comparaciones, categorías, recurrencias y proyecciones en lenguaje natural.
+Gasti es un asistente conversacional de finanzas personales pensado para explorar gastos cotidianos en ARS desde chat. El foco del challenge fue construir una experiencia conversacional útil y explicable sobre un dataset mock local, usando Mastra de forma idiomática para tools, workflows y memoria.
 
-## Qué hace
+## Qué incluye
 
-- Consulta gasto mensual y por período.
-- Compara gastos entre meses.
-- Desglosa gastos por categoría o comercio.
-- Detecta gastos recurrentes y suscripciones.
-- Proyecta el gasto estimado de fin de mes.
-- Recupera continuidad conversacional por thread con Mastra Memory local.
-- Responde en lenguaje natural usando cálculos financieros determinísticos.
+- Chat sobre gastos, comparaciones, recurrencias y proyección de cierre de mes.
+- Datos mock locales en ARS.
+- Continuidad conversacional por thread con Mastra Memory local.
+- Memoria financiera estructurada para recordar contexto explícito del usuario demo, con reset a estado vacío para la demo.
 
-## Stack técnico
+## Stack
 
-- TypeScript
-- Bun
-- Mastra
-- Mastra Memory con LibSQL local para continuidad de conversación
-- Google Gemini vía AI SDK
-- NestJS
+- Bun workspaces + Turborepo
 - Next.js / React
+- NestJS
+- Mastra
+- Google Gemini vía AI SDK
 
-## Estructura del proyecto
+## Correr localmente
 
-```text
-apps/
-  ai/    # Agente Mastra y tools financieras
-  api/   # API NestJS que expone el chat
-  ui/    # Frontend Next.js / React
-data/    # Transacciones mock locales y memoria financiera determinística
-docs/    # Specs y notas de diseño
-```
-
-## Requisitos
+Prerequisitos:
 
 - Bun
-- API key de Google AI Studio
+- `GEMINI_API_KEY`
 
-Antes de usar el chat, configurar la API key:
+Configurar la API key:
 
 ```bash
 export GEMINI_API_KEY="your-google-ai-studio-key"
 ```
-
-## Correr localmente
 
 Instalar dependencias:
 
@@ -52,83 +36,85 @@ Instalar dependencias:
 bun install
 ```
 
-Levantar la app completa:
+Levantar el proyecto:
 
 ```bash
 bun run dev
 ```
 
-La UI escucha en http://localhost:7310 y se comunica con la API mediante su proxy local. La API escucha en http://localhost:7311.
+Puertos esperados:
 
-Podés cambiar los puertos locales con `PORT` al correr cada app. Por defecto, el proxy de la UI apunta a `http://localhost:7311/chat`; si necesitás otro backend, usá `GASTI_CHAT_API_URL`.
+- UI: `http://localhost:7310`
+- API: `http://localhost:7311`
 
-## Ejemplos de uso
+Si necesitás correr servicios por separado:
 
-- "Comparame mis gastos de mayo de 2026 contra abril de 2026"
-- "Detectá mis gastos recurrentes entre abril y mayo de 2026"
-- "Proyectá mi gasto total de mayo de 2026"
-- "Mostrame mis gastos por categoría en mayo de 2026"
+```bash
+bun run dev:ai
+bun run dev:api
+bun run dev:ui
+```
 
-## Verificación
+## Demo memory y reset
 
-Desde la raíz del repo:
+Antes de una demo conviene resetear la memoria del usuario demo:
+
+```bash
+bun run demo:reset-memory
+```
+
+Detalles de qué persiste, qué resetea cada comando y el flujo recomendado están en [docs/demo-memory.md](/Users/franco/Documentos/gasti-challenge/docs/demo-memory.md).
+
+## Tools del agente y por qué
+
+- `spendingSummaryTool`: resuelve preguntas base como cuánto gasté y en qué se fue la plata.
+- `comparePeriodsTool`: permite comparar meses o períodos sin depender de cálculo del modelo.
+- `detectRecurringExpensesTool`: hace visible el tipo de hallazgo que más valor aporta en finanzas personales conversacionales.
+- `forecastMonthEndSpendTool`: cubre la pregunta natural de “a este ritmo cómo cierro el mes”.
+- `findTransactionsTool`: baja la respuesta a evidencia concreta cuando el usuario pide detalle.
+- `getFinanceContext`: ancla fechas disponibles y evita inventar cobertura del dataset.
+- `getFinancialMemory` y `updateFinancialMemory`: separan claramente continuidad conversacional de contexto financiero explícito del usuario demo.
+
+Más detalle técnico sobre Mastra, workflows y memoria en [docs/agent.md](/Users/franco/Documentos/gasti-challenge/docs/agent.md).
+
+## Decisiones de producto
+
+- Conversacional first: el chat es la interfaz principal, no un dashboard con chat al costado.
+- Determinismo para cálculos: totales, comparaciones, recurrencias y proyecciones viven en tools y dominio, no en el modelo.
+- Single demo user: el alcance quedó deliberadamente acotado para priorizar una demo clara.
+- Memoria separada en dos capas: conversación por thread con Mastra y memoria financiera estructurada para hechos estables del usuario.
+- Tono local: respuestas orientadas a ARS, merchants argentinos y lenguaje cotidiano.
+
+## Validación
+
+Desde la raíz:
 
 ```bash
 bun run build
 ```
 
-Para validar el dominio financiero y las tools del agente:
+Validaciones principales:
 
 ```bash
-cd apps/ai
-bun run test:domain
-bun run test:tools
-bun run test:agents
-bun run verify:domain
+cd apps/ai && bun run test:domain && bun run test:tools && bun run test:agents && bun run test:workflows && bun run verify:domain
+cd apps/api && bun run test
+cd apps/ui && bun run test
 ```
 
-Para validar la API:
+Hay un checklist final en [docs/final-checklist.md](/Users/franco/Documentos/gasti-challenge/docs/final-checklist.md).
 
-```bash
-cd apps/api
-bun run test
-bun run build
-```
+## Qué dejaría para después
 
-## Notas de implementación
+- Multiusuario real con aislamiento de memoria y contexto.
+- Más profundidad en memoria financiera y mejores controles de edición.
+- Semantic recall o una estrategia de recuperación más rica entre conversaciones.
+- Una capa visual complementaria para tendencias o comparaciones, sin sacar al chat del centro.
 
-- Los datos son mock y locales, cargados desde `data/transactions.json`.
-- Mastra Memory persiste historial conversacional por `resourceId` y `threadId` solamente. En desarrollo usa LibSQL local en `apps/ai/.mastra/memory.db`, que está ignorado por git.
-- El camino principal de chat es `message + resourceId + threadId`: la UI manda solo el último mensaje y Mastra Memory recupera el contexto del thread.
-- `messages[]` sin `threadId` sigue soportado como modo legacy stateless; la API usa ese historial como contexto completo, limitado a los últimos 20 mensajes.
-- `messages[] + threadId` se acepta por compatibilidad, pero se normaliza al camino con memoria usando solo el último mensaje de usuario para evitar contexto duplicado. `message + messages[]` sigue siendo inválido.
-- Si el cliente manda `message` sin `threadId`, la API usa `demo-thread` solo por compatibilidad local/demo. En producción se debe enviar un thread real por usuario o sesión.
-- La memoria financiera es estructurada, determinística y respaldada por `data/financial-memory.json`; permite guardar hechos financieros explícitos del usuario demo, no guarda transacciones crudas, no usa RAG y no es Mastra Memory.
-- El motor financiero es determinístico: los totales, comparaciones, recurrencias y proyecciones se calculan con funciones y tools.
-- El agente usa Mastra tools para calcular y luego usa IA para interpretar la consulta y redactar la respuesta.
-- La API contempla fallback entre modelos Gemini ante errores de cuota o rate-limit.
-- Semantic recall, embeddings, vector stores y RAG siguen fuera de alcance.
+## Documentación complementaria
 
-## Tools del agente
+- [docs/agent.md](/Users/franco/Documentos/gasti-challenge/docs/agent.md): arquitectura del agente, uso de Mastra y límites del sistema.
+- [docs/demo-memory.md](/Users/franco/Documentos/gasti-challenge/docs/demo-memory.md): manejo de memoria demo y reset por terminal.
+- [docs/final-checklist.md](/Users/franco/Documentos/gasti-challenge/docs/final-checklist.md): checklist final de verificación para entrega/demo.
+- [docs/writeup-draft.md](/Users/franco/Documentos/gasti-challenge/docs/writeup-draft.md): primera iteración del writeup.
 
-- `getFinanceContext`: expone el rango disponible, meses con datos y fecha de referencia sin devolver transacciones crudas.
-- `getFinancialMemory`: expone contexto financiero del usuario demo, como ingresos conocidos, metas, categorías a vigilar y preferencias.
-- `updateFinancialMemory`: persiste hechos financieros explícitos o confirmados con un schema estricto y rechaza datos crudos, secretos, campos no soportados y categorías desconocidas.
-- `spendingSummaryTool`: calcula totales y desgloses de gasto.
-- `comparePeriodsTool`: compara gastos entre dos períodos.
-- `detectRecurringExpensesTool`: detecta gastos recurrentes y suscripciones.
-- `forecastMonthEndSpendTool`: proyecta gasto de fin de mes.
-- `findTransactionsTool`: busca transacciones concretas para mostrar evidencia.
-
-## Para después
-
-- Agregar semantic recall: Buscar recuerdos relevantes entre chats distintos.
-- Expandir lo realizado a multiples usuarios
-- Incluir ABM de datos
-- Agregar seccion de dashboards en la UI para mostrar gráfico de comparación entre meses y entre categorías.
-
-## To do:
-
-- Ampliar la memoria financiera
-- Hacer alguna forma facil de borrar la memoria desde terminal
-- Agregar semantic recall: Buscar recuerdos relevantes entre chats distintos. ?
+Los archivos [docs/product.md](/Users/franco/Documentos/gasti-challenge/docs/product.md), [docs/tools.md](/Users/franco/Documentos/gasti-challenge/docs/tools.md) y [docs/data.md](/Users/franco/Documentos/gasti-challenge/docs/data.md) quedan como notas internas de soporte y no son necesarias para correr ni evaluar el proyecto.

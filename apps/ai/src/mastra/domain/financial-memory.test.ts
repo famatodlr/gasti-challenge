@@ -8,8 +8,10 @@ import {
   createEmptyFinancialMemory,
   financialMemorySchema,
   loadFinancialMemory,
+  loadFinancialMemorySeed,
   updateFinancialMemory,
 } from './financial-memory.ts';
+import { DEMO_USER_RESOURCE_ID } from './demo-context.ts';
 
 function createTemporaryMemoryFile(): { path: string; cleanup: () => void } {
   const directory = mkdtempSync(join(tmpdir(), 'gasti-financial-memory-'));
@@ -27,7 +29,7 @@ test('creates empty financial memory defaults for the demo user', () => {
   const memory = financialMemorySchema.parse(createEmptyFinancialMemory());
 
   assert.equal(memory.schemaVersion, 1);
-  assert.equal(memory.resourceId, 'demo-user');
+  assert.equal(memory.resourceId, DEMO_USER_RESOURCE_ID);
   assert.equal(memory.currency, 'ARS');
   assert.deepEqual(memory.knownIncome, []);
   assert.deepEqual(memory.fixedExpenses, []);
@@ -44,28 +46,21 @@ test('creates empty financial memory defaults for the demo user', () => {
 test('loads the deterministic financial memory fixture', () => {
   const memory = financialMemorySchema.parse(loadFinancialMemory());
 
-  assert.equal(memory.resourceId, 'demo-user');
+  assert.equal(memory.resourceId, DEMO_USER_RESOURCE_ID);
   assert.equal(memory.currency, 'ARS');
-  assert.deepEqual(memory.knownIncome, [
-    {
-      label: 'Ingreso mensual',
-      amount: 1500000,
-      currency: 'ARS',
-      cadence: 'monthly',
-      source: 'user_stated',
-    },
-  ]);
+  assert.deepEqual(memory.knownIncome, []);
   assert.deepEqual(memory.fixedExpenses, []);
-  assert.deepEqual(memory.savingGoals, [
-    {
-      name: 'Viaje a Japón',
-      targetAmount: 1000000,
-      currency: 'ARS',
-      targetDate: '2025-01-01',
-      source: 'user_stated',
-    },
-  ]);
-  assert.deepEqual(memory.watchCategories, ['delivery']);
+  assert.deepEqual(memory.savingGoals, []);
+  assert.deepEqual(memory.watchCategories, []);
+});
+
+test('loads the immutable financial memory seed fixture', () => {
+  const memory = financialMemorySchema.parse(loadFinancialMemorySeed());
+
+  assert.equal(memory.resourceId, DEMO_USER_RESOURCE_ID);
+  assert.equal(memory.currency, 'ARS');
+  assert.deepEqual(memory.knownIncome, []);
+  assert.deepEqual(memory.watchCategories, []);
 });
 
 test('financial memory accepts delivery as a watch category', () => {

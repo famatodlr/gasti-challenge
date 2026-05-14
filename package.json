@@ -11,7 +11,10 @@
     "start": "turbo run start",
     "dev:api": "turbo run dev --filter=api",
     "dev:ui": "turbo run dev --filter=ui",
-    "dev:ai": "turbo run dev --filter=ai"
+    "dev:ai": "turbo run dev --filter=ai",
+    "demo:reset-memory": "bun apps/ai/src/mastra/domain/demo-memory-reset.ts all",
+    "demo:reset-memory:conversation": "bun apps/ai/src/mastra/domain/demo-memory-reset.ts conversation",
+    "demo:reset-memory:financial": "bun apps/ai/src/mastra/domain/demo-memory-reset.ts financial"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

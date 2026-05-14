@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { getCurrentDateString } from './current-date.ts';
 import {
   dateRangeSchema,
   dateStringSchema,
@@ -7,8 +8,6 @@ import {
   getTransactionDateRange,
   type Transaction,
 } from './transaction.ts';
-
-export const GASTI_REFERENCE_DATE = '2026-05-12';
 
 export const financeContextMonthSchema = z.object({
   year: z.number().int(),
@@ -29,9 +28,12 @@ export const financeContextSchema = z.object({
 export type FinanceContextMonth = z.infer<typeof financeContextMonthSchema>;
 export type FinanceContext = z.infer<typeof financeContextSchema>;
 
-export function getFinanceContext(transactions: readonly Transaction[]): FinanceContext {
+export function getFinanceContext(
+  transactions: readonly Transaction[],
+  { today = getCurrentDateString() }: { today?: string } = {},
+): FinanceContext {
   return financeContextSchema.parse({
-    today: GASTI_REFERENCE_DATE,
+    today,
     currency: 'ARS',
     availableDateRange: getTransactionDateRange(transactions),
     availableMonths: buildAvailableMonths(transactions),

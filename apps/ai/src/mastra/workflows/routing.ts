@@ -58,6 +58,20 @@ const financeQuestionSignals = [
   'review',
 ];
 
+const comparisonSignals = ['compar', 'contra', 'vs', 'versus', 'respecto de'];
+const forecastSignals = [
+  'proyecta',
+  'proyectar',
+  'proyeccion',
+  'prediccion',
+  'predeci',
+  'a este ritmo',
+  'fin de mes',
+  'como cierro el mes',
+  'como cierro mayo',
+  'cierre del mes',
+];
+
 function normalizeForIntent(value: string): string {
   return value
     .normalize('NFD')
@@ -83,10 +97,22 @@ export function isGreetingFinancialSnapshotIntent(message: string): boolean {
 
 export function isMonthlyFinancialReviewIntent(message: string): boolean {
   const normalizedMessage = normalizeForIntent(message);
+  const hasForecastSignal = forecastSignals.some((signal) => normalizedMessage.includes(normalizeForIntent(signal)));
+
+  if (hasForecastSignal) {
+    return false;
+  }
+
   const hasReviewSignal =
     /\b(resumen|review|revision|balance)\b/.test(normalizedMessage) ||
     /\bcomo me fue\b/.test(normalizedMessage) ||
     /\bmonthly review\b/.test(normalizedMessage);
+  const hasComparisonSignal = comparisonSignals.some((signal) => normalizedMessage.includes(normalizeForIntent(signal)));
+  const mentionedMonthCount = monthWords.filter((month) => new RegExp(`\\b${month}\\b`).test(normalizedMessage)).length;
+
+  if (hasComparisonSignal && mentionedMonthCount >= 2) {
+    return true;
+  }
 
   if (!hasReviewSignal) {
     return false;

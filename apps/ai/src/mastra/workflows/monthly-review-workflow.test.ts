@@ -69,6 +69,33 @@ test('monthly review workflow compares May 2026 against April 2026 same-day peri
   assert.equal(result.review?.comparison?.baselineRange.to, '2026-04-08');
 });
 
+test('monthly review workflow handles direct month comparison prompts on the first try', async () => {
+  const result = await runMonthlyFinancialReviewWorkflow(
+    { message: 'Comparame mayo contra abril', currentDate: '2026-05-14' },
+    { answerGenerator: deterministicAnswerGenerator },
+  );
+
+  assert.equal(result.review?.period.month, 5);
+  assert.equal(result.review?.period.range.to, '2026-05-08');
+  assert.equal(result.review?.comparison?.baselineRange.from, '2026-04-01');
+  assert.equal(result.review?.comparison?.baselineRange.to, '2026-04-08');
+  assert.match(result.answer, /Compar[eé].*mayo.*hasta el 8.*abril.*hasta el d[ií]a 8/i);
+  assert.doesNotMatch(result.answer, /No tengo un período anterior comparable suficiente/i);
+});
+
+test('monthly review workflow caps previous comparable day for shorter months and available dataset coverage', async () => {
+  const result = await runMonthlyFinancialReviewWorkflow(
+    { message: 'Comparame marzo contra febrero', currentDate: '2026-03-31' },
+    { answerGenerator: deterministicAnswerGenerator },
+  );
+
+  assert.equal(result.review?.period.isPartial, true);
+  assert.equal(result.review?.period.comparableDay, 30);
+  assert.equal(result.review?.period.range.to, '2026-03-30');
+  assert.equal(result.review?.comparison?.baselineRange.to, '2026-02-28');
+  assert.match(result.review?.comparison?.previousPeriodLabel ?? '', /hasta el día 28/);
+});
+
 test('monthly review workflow answer uses real Markdown bullets for breakdown rows', async () => {
   const result = await runMonthlyFinancialReviewWorkflow(
     { message: 'Resumen de mayo 2026', currentDate: '2026-05-13' },
@@ -82,6 +109,16 @@ test('monthly review workflow answer uses real Markdown bullets for breakdown ro
   assert.match(result.answer, /\n- 🏠 \*\*Vivienda:\*\* ARS 250\.000/);
   assert.match(result.answer, /\n- \*\*Propietario:\*\* ARS 250\.000/);
   assert.doesNotMatch(result.answer, /(?:^|\n)\*\*[^*\n]+:\*\* ARS/m);
+  assert.doesNotMatch(result.answer, /¿Querés que te compare categoría por categoría contra el período anterior\?/);
+});
+
+test('monthly review workflow deterministic answer avoids pointing finger emojis in insight bullets', async () => {
+  const result = await runMonthlyFinancialReviewWorkflow(
+    { message: 'Comparame mayo contra abril', currentDate: '2026-05-14' },
+    { answerGenerator: deterministicAnswerGenerator },
+  );
+
+  assert.doesNotMatch(result.answer, /👇|👆|👉|👈/u);
 });
 
 test('monthly review workflow narrator instructions require markdown sections and bullet rows', () => {

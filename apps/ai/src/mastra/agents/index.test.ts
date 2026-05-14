@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MockStore } from '@mastra/core/storage';
+import { DEMO_DEFAULT_MEMORY_THREAD_ID, DEMO_USER_RESOURCE_ID } from '../domain/demo-context.ts';
 
 import {
-  DEMO_RESOURCE_ID,
-  LOCAL_DEMO_DEFAULT_THREAD_ID,
   SanitizedGastiMemory,
   gastiConversationMemory,
   memoryDatabasePath,
@@ -53,8 +52,8 @@ test('gastiFinanceAgent registers updateFinancialMemory as an available tool', (
 });
 
 test('gastiFinanceAgent has persistent conversation memory configured', () => {
-  assert.equal(DEMO_RESOURCE_ID, 'demo-user');
-  assert.equal(LOCAL_DEMO_DEFAULT_THREAD_ID, 'demo-thread');
+  assert.equal(DEMO_USER_RESOURCE_ID, 'demo-user');
+  assert.equal(DEMO_DEFAULT_MEMORY_THREAD_ID, 'demo-thread');
   assert.equal(gastiFinanceAgent.getMemory(), gastiConversationMemory);
 });
 
@@ -109,7 +108,7 @@ test('Gasti agent instructions define the structured response contract', () => {
   assert.match(GASTI_AGENT_INSTRUCTIONS, /summary.*required/i);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /Do not return arbitrary Markdown when structured output is requested/i);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /Use caveats for partial periods/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Only include suggestedQuestion/i);
+  assert.doesNotMatch(GASTI_AGENT_INSTRUCTIONS, /suggestedQuestion/i);
 });
 
 test('grounding addendum requires finance context for dataset availability questions', () => {

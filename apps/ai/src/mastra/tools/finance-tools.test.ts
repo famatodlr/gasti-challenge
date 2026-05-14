@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { getCurrentDateString } from '../domain/current-date.ts';
 import {
   comparePeriodsTool,
   detectRecurringExpensesTool,
@@ -101,8 +102,15 @@ test('finance tools execute analytics and return schema-valid outputs', async ()
   assert.equal(parsedRecurringExpenses.currency, 'ARS');
   assert.equal(parsedRecurringExpenses.estimatedMonthlyCommittedSpend, 344048);
   assert.equal(parsedRecurringExpenses.summary.committedMonthlyTotal, 344048);
+  assert.equal(parsedRecurringExpenses.summary.fixedLikeCount, 7);
+  assert.equal(parsedRecurringExpenses.summary.variableRepeatCount, 8);
   assert.ok(parsedRecurringExpenses.items.some((item) => item.classification === 'compromiso'));
   assert.ok(parsedRecurringExpenses.items.some((item) => item.merchant === 'Netflix'));
+  assert.equal(parsedRecurringExpenses.items.find((item) => item.merchant === 'Starbucks')?.classification, 'repeticion_variable');
+  assert.match(
+    parsedRecurringExpenses.caveats.join(' '),
+    /habits rather than fixed commitments/i,
+  );
 
   const monthEndForecast = await executeTool(forecastMonthEndSpendTool, {
     month: '2026-05',
@@ -121,7 +129,7 @@ test('getFinanceContextTool exposes dataset metadata without raw transactions', 
   const financeContext = await executeTool(getFinanceContextTool, {});
   const parsedFinanceContext = getFinanceContextTool.outputSchema.parse(financeContext);
 
-  assert.equal(parsedFinanceContext.today, '2026-05-12');
+  assert.equal(parsedFinanceContext.today, getCurrentDateString());
   assert.equal(parsedFinanceContext.currency, 'ARS');
   assert.deepEqual(parsedFinanceContext.availableDateRange, {
     from: '2026-03-15',

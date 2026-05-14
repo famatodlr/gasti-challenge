@@ -1,4 +1,4 @@
-import { AssistantMarkdown, type AssistantAnswerUi, inferSuggestedQuestion } from './assistant-markdown';
+import { AssistantMarkdown, type AssistantAnswerUi } from './assistant-markdown';
 import type { ActivityFeedItem, ActivityFeedStatus } from './activity';
 
 function activityLabelClass(status: ActivityFeedStatus): string {
@@ -50,13 +50,10 @@ export function formatActivityTime(timestamp: string | undefined): string {
 export function AssistantMessageCard({
   content,
   answerUi,
-  onSuggestedQuestionClick,
 }: {
   content: string;
   answerUi?: AssistantAnswerUi | null;
-  onSuggestedQuestionClick?: (question: string) => void;
 }) {
-  const suggestedQuestion = answerUi?.suggestedQuestion ?? inferSuggestedQuestion(content);
   const hasStructuredBlocks = Boolean(answerUi?.headline || answerUi?.summary || answerUi?.bullets?.length || answerUi?.note);
   const fallbackBody = !hasStructuredBlocks || (!answerUi?.summary && !answerUi?.bullets?.length) ? content : null;
 
@@ -80,15 +77,6 @@ export function AssistantMessageCard({
         </p>
       ) : null}
       {fallbackBody ? <AssistantMarkdown content={fallbackBody} /> : null}
-      {suggestedQuestion && onSuggestedQuestionClick ? (
-        <button
-          type="button"
-          onClick={() => onSuggestedQuestionClick(suggestedQuestion)}
-          className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-3)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--border-soft)] hover:text-[var(--text-primary)]"
-        >
-          {suggestedQuestion}
-        </button>
-      ) : null}
     </div>
   );
 }

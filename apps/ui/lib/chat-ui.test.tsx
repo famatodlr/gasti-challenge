@@ -17,16 +17,13 @@ test('AssistantMessageCard renders structured answerUi without markdown duplicat
   assert.equal(html.includes('Fallback'), false);
 });
 
-test('AssistantMessageCard renders suggestion chip when question is inferred', () => {
+test('AssistantMessageCard does not render a suggestion button even when content ends with a question', () => {
   const html = renderToStaticMarkup(
-    <AssistantMessageCard
-      content="Cierre.\n¿Querés comparar contra abril?"
-      onSuggestedQuestionClick={() => {}}
-    />,
+    <AssistantMessageCard content="Cierre.\n¿Querés comparar contra abril?" />,
   );
 
   assert.match(html, /¿Querés comparar contra abril\?/);
-  assert.match(html, /<button/);
+  assert.equal(html.includes('<button'), false);
 });
 
 test('ActivityRail renders states and empty state', () => {

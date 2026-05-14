@@ -1,5 +1,7 @@
 # Mock Transaction Data Spec
 
+> Internal data note. This file is support material from development and is not required to run or review the final deliverable. For the delivery-facing overview, start with [README.md](/Users/franco/Documentos/gasti-challenge/README.md).
+
 ## Existing Data
 
 The starter already includes `data/transactions.json` with 50 ARS expense transactions from 2026-03-15 through 2026-05-08. That satisfies the challenge count and approximate 60-day window.

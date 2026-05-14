@@ -57,6 +57,22 @@ test('income-derived questions forbid unsupported income claims without current-
   assert.equal(policy.currentTurnEvidenceRequired, true);
 });
 
+test('forecast phrasing variants are classified as forecast and include finance context for relative month', () => {
+  const projected = buildFinanceGroundingPolicy('Proyectá mi gasto de este mes');
+  const closing = buildFinanceGroundingPolicy('Cómo cierro mayo?');
+  const pace = buildFinanceGroundingPolicy('A este ritmo cuánto gasto este mes?');
+
+  assert.equal(projected.questionType, 'forecast');
+  assert.equal(projected.requiresFinanceContext, true);
+  assertIncludesTools(projected, ['getFinanceContext', 'forecastMonthEndSpendTool']);
+
+  assert.equal(closing.questionType, 'forecast');
+  assertIncludesTools(closing, ['getFinanceContext', 'forecastMonthEndSpendTool']);
+
+  assert.equal(pace.questionType, 'forecast');
+  assertIncludesTools(pace, ['getFinanceContext', 'forecastMonthEndSpendTool']);
+});
+
 test('bare month resolution picks the latest matching month when it is unambiguous', () => {
   const resolved = resolveBareMonthFromFinanceContext('mayo', [
     { year: 2026, month: 3, label: 'marzo de 2026' },

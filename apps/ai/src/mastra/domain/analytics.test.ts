@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { comparePeriods, detectRecurringExpenses, forecastMonthEndSpend, summarizeSpending } from './analytics.ts';
 import { loadTransactions } from './transaction-repository.ts';
+import type { Transaction } from './transaction.ts';
 import { formatARS } from './transaction.ts';
 
 const transactions = loadTransactions();
@@ -122,12 +123,27 @@ test('detects repeated subscriptions and fixed bills as recurring expenses', () 
   assert.equal(recurring.periodMeta.dayCount, 55);
   assert.equal(recurring.summary.committedMonthlyTotal, 344048);
   assert.ok(recurring.summary.highConfidenceCount > 0);
+  assert.equal(recurring.summary.fixedLikeCount, 7);
+  assert.equal(recurring.summary.variableRepeatCount, 8);
   assert.equal(recurring.items.find((item) => item.merchant === 'Netflix')?.classification, 'compromiso');
   assert.equal(recurring.items.find((item) => item.merchant === 'Rappi')?.classification, 'repeticion_variable');
   assert.equal(recurring.items.find((item) => item.merchant === 'Netflix')?.occurrenceCount, 2);
   assert.deepEqual(recurring.items.find((item) => item.merchant === 'Netflix')?.occurrenceIds, ['txn_008', 'txn_044']);
   assert.equal(recurring.items.find((item) => item.merchant === 'Netflix')?.firstSeen, '2026-04-04');
   assert.equal(recurring.items.find((item) => item.merchant === 'Netflix')?.lastSeen, '2026-05-05');
+  assert.match(
+    recurring.items.find((item) => item.merchant === 'Netflix')?.reason ?? '',
+    /monthly spacing, very similar amounts, and fixed-cost category or merchant hint/i,
+  );
+  assert.match(
+    recurring.items.find((item) => item.merchant === 'Rappi')?.reason ?? '',
+    /repeated merchant, some amount variation, and variable-spend merchant/i,
+  );
+  assert.equal(recurring.items.find((item) => item.merchant === 'SportClub')?.classification, 'compromiso');
+  assert.equal(recurring.items.find((item) => item.merchant === 'SportClub')?.confidence, 'high');
+  assert.equal(recurring.items.find((item) => item.merchant === 'SportClub')?.cadence, 'monthly');
+  assert.equal(recurring.items.find((item) => item.merchant === 'Starbucks')?.classification, 'repeticion_variable');
+  assert.equal(recurring.items.find((item) => item.merchant === 'Starbucks')?.confidence, 'medium');
 
   for (const merchant of variableRepeatMerchants) {
     assert.ok(merchants.includes(merchant));
@@ -139,6 +155,44 @@ test('detects repeated subscriptions and fixed bills as recurring expenses', () 
     .reduce((total, item) => total + item.estimatedMonthlyAmount, 0);
 
   assert.equal(committedTotal, recurring.estimatedMonthlyCommittedSpend);
+});
+
+test('keeps fixed-signal merchants out of compromiso when timing is not monthly', () => {
+  const syntheticTransactions: Transaction[] = [
+    {
+      id: 'txn_901',
+      date: '2026-04-01',
+      amount: 75000,
+      currency: 'ARS',
+      description: 'Prepaga abril',
+      merchant: 'Galeno',
+      category: 'servicios',
+      rawCategory: 'salud',
+    },
+    {
+      id: 'txn_902',
+      date: '2026-04-12',
+      amount: 75000,
+      currency: 'ARS',
+      description: 'Ajuste prepaga',
+      merchant: 'Galeno',
+      category: 'servicios',
+      rawCategory: 'salud',
+    },
+  ];
+
+  const recurring = detectRecurringExpenses(syntheticTransactions, {
+    dateRange: { from: '2026-04-01', to: '2026-04-12' },
+  });
+
+  assert.equal(recurring.summary.committedMonthlyTotal, 0);
+  assert.equal(recurring.summary.fixedLikeCount, 0);
+  assert.equal(recurring.summary.variableRepeatCount, 1);
+  assert.equal(recurring.items[0]?.merchant, 'Galeno');
+  assert.equal(recurring.items[0]?.classification, 'repeticion_variable');
+  assert.equal(recurring.items[0]?.confidence, 'medium');
+  assert.equal(recurring.items[0]?.cadence, 'irregular_repeat');
+  assert.match(recurring.items[0]?.reason ?? '', /timing looks monthly/i);
 });
 
 test('forecasts May month-end spend as of 2026-05-08', () => {

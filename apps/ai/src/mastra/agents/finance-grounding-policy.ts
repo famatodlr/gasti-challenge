@@ -11,7 +11,16 @@ const DATASET_AVAILABILITY_PATTERNS = [
 
 const COMPARISON_PATTERNS = [/\bcompar/i, /\bvs\b/i, /\brespecto de\b/i, /\bmas que\b/i, /\bmenos que\b/i];
 const RECURRING_PATTERNS = [/\brecurrent/i, /\bsuscrip/i, /\bfijos?\b/i, /\bzombie\b/i];
-const FORECAST_PATTERNS = [/\ba este ritmo\b/i, /\bfin de mes\b/i, /\bproyecci[oó]n\b/i];
+const FORECAST_PATTERNS = [
+  /\ba este ritmo\b/i,
+  /\bfin de mes\b/i,
+  /\bproyecci[oó]n\b/i,
+  /proyect/i,
+  /\bpredicci[oó]n\b/i,
+  /\bpredec(?:i|í)\b/i,
+  /\bc[oó]mo cierro (?:el )?mes\b/i,
+  /\bc[oó]mo cierro (?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/i,
+];
 const TRANSACTION_DETAIL_PATTERNS = [/\bmostra/i, /\bwhich transactions\b/i, /\bdetalle/i];
 const SPEND_PATTERNS = [/\bcu[aá]nto\b/i, /\bgast[ée]\b/i, /\bgasto\b/i];
 const INCOME_PATTERNS = [/\bingreso\b/i, /\bsueldo\b/i, /\bsalary\b/i, /\bahorro\b/i, /\btasa de ahorro\b/i];

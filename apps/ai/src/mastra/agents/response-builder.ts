@@ -15,7 +15,6 @@ export const gastiStructuredResponseSchema = z.object({
   summary: z.string(),
   bullets: z.array(z.string()).optional(),
   caveats: z.array(z.string()).optional(),
-  suggestedQuestion: z.string().optional(),
 });
 
 export type GastiResponseKind = z.infer<typeof gastiResponseKindSchema>;
@@ -211,15 +210,12 @@ export function normalizeGastiStructuredResponse(input: unknown): GastiStructure
 
   const bullets = normalizeOptionalStringList(parsed.data.bullets);
   const caveats = normalizeOptionalStringList(parsed.data.caveats);
-  const suggestedQuestion = normalizeOptionalString(parsed.data.suggestedQuestion);
-
   return {
     kind: parsed.data.kind,
     summary,
     ...(headline ? { headline } : {}),
     ...(bullets ? { bullets } : {}),
     ...(caveats ? { caveats } : {}),
-    ...(suggestedQuestion ? { suggestedQuestion } : {}),
   };
 }
 
@@ -243,10 +239,6 @@ export function buildGastiResponseMarkdown(response: GastiStructuredResponse): s
 
   if (response.caveats && response.caveats.length > 0) {
     sections.push(`_Nota: ${response.caveats.join(' ')}_`);
-  }
-
-  if (response.suggestedQuestion) {
-    sections.push(response.suggestedQuestion);
   }
 
   return sections.join('\n\n');

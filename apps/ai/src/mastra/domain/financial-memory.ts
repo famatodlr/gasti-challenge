@@ -3,9 +3,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z, ZodError } from 'zod';
 
+import { DEMO_USER_RESOURCE_ID } from './demo-context.ts';
 import { categorySchema, dateStringSchema } from './transaction.ts';
-
-export const DEMO_FINANCIAL_MEMORY_RESOURCE_ID = 'demo-user';
 
 const memorySourceSchema = z.enum(['user_stated', 'user_confirmed']);
 const currencySchema = z.literal('ARS');
@@ -66,7 +65,7 @@ export const financialPreferencesSchema = z
 export const financialMemorySchema = z
   .object({
     schemaVersion: z.literal(1),
-    resourceId: z.literal(DEMO_FINANCIAL_MEMORY_RESOURCE_ID),
+    resourceId: z.literal(DEMO_USER_RESOURCE_ID),
     currency: currencySchema,
     knownIncome: z.array(knownIncomeSchema),
     fixedExpenses: z.array(fixedExpenseSchema),
@@ -142,12 +141,13 @@ export type FinancialMemory = z.infer<typeof financialMemorySchema>;
 export type FinancialMemoryPatch = z.infer<typeof financialMemoryPatchSchema>;
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
-const defaultFinancialMemoryPath = resolve(currentDirectory, '../../../../../data/financial-memory.json');
+export const defaultFinancialMemoryPath = resolve(currentDirectory, '../../../../../data/financial-memory.json');
+export const defaultFinancialMemorySeedPath = resolve(currentDirectory, '../../../../../data/financial-memory.seed.json');
 
 export function createEmptyFinancialMemory(): FinancialMemory {
   return financialMemorySchema.parse({
     schemaVersion: 1,
-    resourceId: DEMO_FINANCIAL_MEMORY_RESOURCE_ID,
+    resourceId: DEMO_USER_RESOURCE_ID,
     currency: 'ARS',
     knownIncome: [],
     fixedExpenses: [],
@@ -183,13 +183,17 @@ export function loadFinancialMemory(path = defaultFinancialMemoryPath): Financia
   }
 }
 
+export function loadFinancialMemorySeed(path = defaultFinancialMemorySeedPath): FinancialMemory {
+  return loadFinancialMemory(path);
+}
+
 export function updateFinancialMemory(
   resourceId: string,
   patch: unknown,
   path = defaultFinancialMemoryPath,
 ): FinancialMemory {
-  if (resourceId !== DEMO_FINANCIAL_MEMORY_RESOURCE_ID) {
-    throw new Error(`Financial memory updates are only supported for ${DEMO_FINANCIAL_MEMORY_RESOURCE_ID}.`);
+  if (resourceId !== DEMO_USER_RESOURCE_ID) {
+    throw new Error(`Financial memory updates are only supported for ${DEMO_USER_RESOURCE_ID}.`);
   }
 
   assertPatchPayloadIsSafe(patch);

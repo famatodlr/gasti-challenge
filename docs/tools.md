@@ -1,5 +1,7 @@
 # Mastra Tools Spec
 
+> Internal tool spec. This file is support material from development and is not required to run or review the final deliverable. For the delivery-facing overview, start with [README.md](/Users/franco/Documentos/gasti-challenge/README.md) and [agent.md](/Users/franco/Documentos/gasti-challenge/docs/agent.md).
+
 ## Tool Design Rules
 
 All finance capabilities should be implemented as Mastra tools with `createTool({ id, description, inputSchema, outputSchema, execute })` and Zod schemas.
@@ -112,7 +114,7 @@ z.object({
 
 Notes:
 
-- `today` uses the configured demo reference date.
+- `today` uses the current system date at runtime.
 - `availableDateRange` is derived from the minimum and maximum transaction dates.
 - `availableMonths` includes only months that have transactions.
 - The tool must not return raw transaction rows.

@@ -30,7 +30,6 @@ export type AssistantAnswerUi = {
   summary?: string;
   bullets?: string[];
   note?: string;
-  suggestedQuestion?: string;
 };
 
 function readMaybeString(value: unknown): string | undefined {
@@ -56,30 +55,11 @@ export function normalizeAnswerUi(value: unknown): AssistantAnswerUi | null {
   const summary = readMaybeString(record.summary) ?? readMaybeString(record.body);
   const bullets = readMaybeStringArray(record.bullets) ?? readMaybeStringArray(record.highlights);
   const note = readMaybeString(record.note) ?? readMaybeString(record.caveat);
-  const suggestedQuestion =
-    readMaybeString(record.suggestedQuestion) ?? readMaybeString(record.nextQuestion) ?? readMaybeString(record.question);
-
-  if (!headline && !summary && !bullets && !note && !suggestedQuestion) {
+  if (!headline && !summary && !bullets && !note) {
     return null;
   }
 
-  return { headline, summary, ...(bullets ? { bullets } : {}), note, suggestedQuestion };
-}
-
-export function inferSuggestedQuestion(content: string): string | null {
-  const lines = content
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const finalLine = lines.at(-1);
-
-  if (!finalLine || !finalLine.endsWith('?') || finalLine.length < 12 || finalLine.length > 140) {
-    return null;
-  }
-
-  return finalLine;
+  return { headline, summary, ...(bullets ? { bullets } : {}), note };
 }
 
 export function parseAssistantMarkdown(content: string): AssistantMarkdownBlock[] {
