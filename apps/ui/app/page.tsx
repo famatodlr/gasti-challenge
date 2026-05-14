@@ -12,21 +12,26 @@ import {
 import { normalizeAnswerUi, type AssistantAnswerUi, PlainChatText } from '@/lib/assistant-markdown';
 import { ActivityRail, AssistantMessageCard } from '@/lib/chat-ui';
 import { buildChatRequestPayload } from './chat-request';
-
-type ChatRole = 'user' | 'assistant';
-
-type ChatMessage = {
-  id: string;
-  role: ChatRole;
-  content: string;
-  answerUi?: AssistantAnswerUi | null;
-};
+import {
+  buildNewChatSessionState,
+  createInitialChatMessages,
+  createThreadId,
+  DEMO_DEFAULT_THREAD_ID,
+  DEMO_THREAD_STORAGE_KEY,
+  type ChatMessage as SessionChatMessage,
+  type ChatRole,
+  readOrCreateStoredThreadId as readOrCreateStoredThreadIdFromStorage,
+} from './thread-session';
 
 type ChatResponse = {
   answer?: unknown;
   steps?: unknown;
   answerUi?: unknown;
   error?: unknown;
+};
+
+type ChatMessage = SessionChatMessage & {
+  answerUi?: AssistantAnswerUi | null;
 };
 
 const starterQuestions = [
@@ -36,16 +41,7 @@ const starterQuestions = [
   'Proyectá mi gasto de este mes',
 ];
 
-const DEMO_THREAD_STORAGE_KEY = 'gasti.threadId';
-const DEMO_DEFAULT_THREAD_ID = 'demo-thread';
-
-const initialMessages: ChatMessage[] = [
-  {
-    id: 'welcome',
-    role: 'assistant',
-    content: 'Hola, soy Gasti. Preguntame por tus gastos, comparaciones, recurrencias o proyecciones.',
-  },
-];
+const initialMessages: ChatMessage[] = createInitialChatMessages();
 
 function createMessage(role: ChatRole, content: string): ChatMessage {
   return {
@@ -55,29 +51,12 @@ function createMessage(role: ChatRole, content: string): ChatMessage {
   };
 }
 
-function createThreadId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-
-  return `thread-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 function readOrCreateStoredThreadId(): string {
   if (typeof window === 'undefined') {
     return DEMO_DEFAULT_THREAD_ID;
   }
 
-  const storedThreadId = window.localStorage.getItem(DEMO_THREAD_STORAGE_KEY)?.trim();
-
-  if (storedThreadId) {
-    return storedThreadId;
-  }
-
-  const nextThreadId = createThreadId();
-  window.localStorage.setItem(DEMO_THREAD_STORAGE_KEY, nextThreadId);
-
-  return nextThreadId;
+  return readOrCreateStoredThreadIdFromStorage(window.localStorage);
 }
 
 function getErrorMessage(payload: ChatResponse | null): string {
@@ -267,11 +246,13 @@ export default function Page() {
       window.localStorage.setItem(DEMO_THREAD_STORAGE_KEY, nextThreadId);
     }
 
-    setThreadId(nextThreadId);
-    setMessages(initialMessages);
-    setLatestActivity([]);
-    setInput('');
-    setError(null);
+    const nextState = buildNewChatSessionState(nextThreadId);
+
+    setThreadId(nextState.threadId);
+    setMessages(nextState.messages);
+    setLatestActivity(nextState.latestActivity);
+    setInput(nextState.input);
+    setError(nextState.error);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

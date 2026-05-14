@@ -8,6 +8,7 @@ import {
   createEmptyFinancialMemory,
   financialMemorySchema,
   loadFinancialMemory,
+  loadFinancialMemorySeed,
   updateFinancialMemory,
 } from './financial-memory.ts';
 import { DEMO_USER_RESOURCE_ID } from './demo-context.ts';
@@ -63,6 +64,23 @@ test('loads the deterministic financial memory fixture', () => {
       targetAmount: 1000000,
       currency: 'ARS',
       targetDate: '2025-01-01',
+      source: 'user_stated',
+    },
+  ]);
+  assert.deepEqual(memory.watchCategories, ['delivery']);
+});
+
+test('loads the immutable financial memory seed fixture', () => {
+  const memory = financialMemorySchema.parse(loadFinancialMemorySeed());
+
+  assert.equal(memory.resourceId, DEMO_USER_RESOURCE_ID);
+  assert.equal(memory.currency, 'ARS');
+  assert.deepEqual(memory.knownIncome, [
+    {
+      label: 'Ingreso mensual',
+      amount: 1500000,
+      currency: 'ARS',
+      cadence: 'monthly',
       source: 'user_stated',
     },
   ]);

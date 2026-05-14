@@ -141,7 +141,8 @@ export type FinancialMemory = z.infer<typeof financialMemorySchema>;
 export type FinancialMemoryPatch = z.infer<typeof financialMemoryPatchSchema>;
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
-const defaultFinancialMemoryPath = resolve(currentDirectory, '../../../../../data/financial-memory.json');
+export const defaultFinancialMemoryPath = resolve(currentDirectory, '../../../../../data/financial-memory.json');
+export const defaultFinancialMemorySeedPath = resolve(currentDirectory, '../../../../../data/financial-memory.seed.json');
 
 export function createEmptyFinancialMemory(): FinancialMemory {
   return financialMemorySchema.parse({
@@ -180,6 +181,10 @@ export function loadFinancialMemory(path = defaultFinancialMemoryPath): Financia
 
     throw error;
   }
+}
+
+export function loadFinancialMemorySeed(path = defaultFinancialMemorySeedPath): FinancialMemory {
+  return loadFinancialMemory(path);
 }
 
 export function updateFinancialMemory(

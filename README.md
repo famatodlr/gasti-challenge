@@ -62,6 +62,32 @@ La UI escucha en http://localhost:7310 y se comunica con la API mediante su prox
 
 Podés cambiar los puertos locales con `PORT` al correr cada app. Por defecto, el proxy de la UI apunta a `http://localhost:7311/chat`; si necesitás otro backend, usá `GASTI_CHAT_API_URL`.
 
+## Reset de memoria demo
+
+Pensado solo para demo/desarrollo. Desde la raíz del repo:
+
+```bash
+bun run demo:reset-memory
+```
+
+Comandos auxiliares:
+
+```bash
+bun run demo:reset-memory:conversation
+bun run demo:reset-memory:financial
+```
+
+Flujo recomendado antes de grabar un Loom:
+
+```bash
+bun run demo:reset-memory
+bun run dev
+```
+
+Si levantás servicios por separado, corré primero el reset y después `bun run dev:ai`, `bun run dev:api` y `bun run dev:ui`.
+
+Para máxima confiabilidad, corré el reset con AI/API detenidos, así el borrado de `apps/ai/.mastra/memory.db` y sus archivos asociados no compite con procesos abiertos.
+
 ## Ejemplos de uso
 
 - "Comparame mis gastos de mayo de 2026 contra abril de 2026"
@@ -104,10 +130,24 @@ bun run build
 - `messages[] + threadId` se acepta por compatibilidad, pero se normaliza al camino con memoria usando solo el último mensaje de usuario para evitar contexto duplicado. `message + messages[]` sigue siendo inválido.
 - Si el cliente manda `message` sin `threadId`, la API usa `demo-thread` solo por compatibilidad local/demo. En producción se debe enviar un thread real por usuario o sesión.
 - La memoria financiera es estructurada, determinística y respaldada por `data/financial-memory.json`; permite guardar hechos financieros explícitos del usuario demo, no guarda transacciones crudas, no usa RAG y no es Mastra Memory.
+- El seed inmutable para reseed demo vive en `data/financial-memory.seed.json`; `data/financial-memory.json` queda como estado runtime reseteable.
 - El motor financiero es determinístico: los totales, comparaciones, recurrencias y proyecciones se calculan con funciones y tools.
 - El agente usa Mastra tools para calcular y luego usa IA para interpretar la consulta y redactar la respuesta.
 - La API contempla fallback entre modelos Gemini ante errores de cuota o rate-limit.
 - Semantic recall, embeddings, vector stores y RAG siguen fuera de alcance.
+
+### Qué resetea
+
+- `demo:reset-memory`: borra toda la memoria conversacional persistida demo en `apps/ai/.mastra/memory.db`, `memory.db-shm` y `memory.db-wal`, y restaura `data/financial-memory.json` desde `data/financial-memory.seed.json`.
+- `demo:reset-memory:conversation`: borra solo la memoria conversacional persistida.
+- `demo:reset-memory:financial`: restaura solo la memoria financiera estructurada del demo user al seed base.
+
+### Qué no resetea
+
+- No toca `data/transactions.json`.
+- No toca configuración, código, UI ni puertos.
+- No agrega soporte multiusuario ni ABM.
+- `Nuevo chat` sigue significando solo un thread conversacional nuevo en UI; no dispara reset global de memoria conversacional ni financiera.
 
 ## Tools del agente
 
@@ -130,5 +170,4 @@ bun run build
 ## To do:
 
 - Ampliar la memoria financiera
-- Hacer alguna forma facil de borrar la memoria desde terminal
 - Agregar semantic recall: Buscar recuerdos relevantes entre chats distintos. ?
