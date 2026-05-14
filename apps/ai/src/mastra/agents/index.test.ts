@@ -10,7 +10,14 @@ import {
   memoryDatabasePath,
   sanitizeMastraMemoryMessagesForGasti,
 } from './conversation-memory.ts';
-import { GASTI_AGENT_INSTRUCTIONS, financeTools, gastiFinanceAgent } from './index.ts';
+import {
+  GASTI_AGENT_INSTRUCTIONS,
+  buildGastiFinanceGroundingAddendum,
+  financeTools,
+  gastiFinanceAgent,
+  prepareGastiFinanceAgentMessages,
+} from './index.ts';
+import { buildFinanceGroundingPolicy } from './finance-grounding-policy.ts';
 
 test('finance tools include getFinanceContext for the Gasti finance agent', () => {
   assert.equal(financeTools.getFinanceContext.id, 'getFinanceContext');
@@ -51,70 +58,21 @@ test('gastiFinanceAgent has persistent conversation memory configured', () => {
   assert.equal(gastiFinanceAgent.getMemory(), gastiConversationMemory);
 });
 
-test('Gasti agent instructions include the conversational formatting contract', () => {
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Response formatting contract:/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /short paragraphs/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /short sections/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /blank lines between sections/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Markdown bullets using "- "/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Put a blank line before every Markdown bullet list/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Put each bullet on its own line/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Do not place bullets inline after a sentence/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Never use inline financial row lists/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Prefer bold labels inside bullets/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Put a blank line after every Markdown bullet list/i);
-  assert.match(
-    GASTI_AGENT_INSTRUCTIONS,
-    /Any time the answer contains two or more financial rows/i,
-  );
-  assert.match(
-    GASTI_AGENT_INSTRUCTIONS,
-    /categories, drivers, merchants, expenses, recurring payments, period totals, or breakdown items/i,
-  );
-  assert.match(
-    GASTI_AGENT_INSTRUCTIONS,
-    /Before sending the final answer, check for consecutive financial rows or lines starting with \*\*Label:\*\*/i,
-  );
-  assert.match(
-    GASTI_AGENT_INSTRUCTIONS,
-    /rewrite each one as a Markdown bullet starting with "- "/i,
-  );
-  assert.match(
-    GASTI_AGENT_INSTRUCTIONS,
-    /Never leave bare bold-label rows in the final answer/i,
-  );
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /A heading sentence before a list must be followed by a blank line/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /bold important months, periods, totals, and amounts/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Short factual answers may use no emoji/i);
-  assert.match(
-    GASTI_AGENT_INSTRUCTIONS,
-    /Longer summaries, comparisons, projections, savings-goal answers, or insight-style responses may include a few helpful emojis/i,
-  );
+test('Gasti agent instructions include plain Markdown fallback formatting guidance', () => {
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Plain Markdown fallback formatting:/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /short paragraphs with blank lines/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Markdown bullets/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Never put multiple financial rows inline/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /render them as bullets/i);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /Use emojis sparingly/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /section-first emoji policy/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Use usually one emoji in a section title/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Never place more than one emoji next to each other/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Do not put an emoji in every bullet if the list is long/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /not be one dense paragraph/i);
 });
 
-test('Gasti agent instructions include category emoji guidance', () => {
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Category emojis:/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Vivienda \/ alquiler: 🏠/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Salud \/ prepaga \/ farmacia: 🏥/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Supermercado: 🛒/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Compras: 🛍️/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Delivery \/ comida \/ restaurantes: 🍽️/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Suscripciones \/ servicios digitales: 💳/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Insights \/ recomendaciones: 💡/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Aumentos \/ tendencias: 📈/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Bajas \/ ahorro detectado: 📉/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Alertas \/ gasto inusual: ⚠️/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Resúmenes \/ reviews: 📊/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Servicios \/ luz \/ gas \/ internet: 💡/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Ahorro \/ objetivo: 🎯/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Japón: 🇯🇵/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Proyección: 📈/);
+test('Gasti agent instructions include tone and emoji guidance', () => {
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Tone and style:/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Emojis are allowed/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /optional visual cues/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Do not use emojis in every bullet/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Do not let emojis replace precise financial facts/i);
 });
 
 test('Gasti agent instructions guide savings-goal answers', () => {
@@ -123,19 +81,74 @@ test('Gasti agent instructions guide savings-goal answers', () => {
   assert.match(GASTI_AGENT_INSTRUCTIONS, /quiero guardar/);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /quiero juntar/);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /1M/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /para Japon/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /para Japón/);
   assert.match(GASTI_AGENT_INSTRUCTIONS, /mention the target amount clearly/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /connect spending analysis back to the goal/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Connect spending analysis back to the goal only when supported by tools or memory/i);
 });
 
-test('Gasti agent instructions guide period summaries and follow-ups', () => {
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /Period summaries:/);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /group results by month or period/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /show the total first/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /top 2-3 drivers/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /separate raw numbers from interpretation/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /one specific follow-up question/i);
-  assert.match(GASTI_AGENT_INSTRUCTIONS, /no generic disclaimers/i);
+test('Gasti agent instructions guide grounding and follow-up behavior', () => {
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Evidence and grounding:/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Current-turn finance tool results are the source of truth/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Prompt examples, docs, previous assistant text, and general model knowledge are never evidence/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /latest matching available month when unambiguous/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /ask for clarification/i);
+});
+
+test('Gasti agent instructions mention partial-period and comparison-basis handling', () => {
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /periodMeta/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /month-to-date|partial period/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /comparisonBasis/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /sameLength/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /avoid implying a full like-for-like month comparison/i);
+});
+
+test('Gasti agent instructions define the structured response contract', () => {
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Structured response contract:/);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /GastiStructuredResponse/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /kind.*required/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /summary.*required/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Do not return arbitrary Markdown when structured output is requested/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Use caveats for partial periods/i);
+  assert.match(GASTI_AGENT_INSTRUCTIONS, /Only include suggestedQuestion/i);
+});
+
+test('grounding addendum requires finance context for dataset availability questions', () => {
+  const policy = buildFinanceGroundingPolicy('Que transacciones tenes registradas?');
+  const addendum = buildGastiFinanceGroundingAddendum(policy);
+
+  assert.ok(addendum);
+  assert.match(addendum, /getFinanceContext/);
+  assert.match(addendum, /current-turn evidence/i);
+  assert.match(addendum, /coverage ranges/i);
+});
+
+test('grounding addendum includes acceptable merchant tools and bare-month warning', () => {
+  const policy = buildFinanceGroundingPolicy('Cuánto gasté en Netflix en mayo?');
+  const addendum = buildGastiFinanceGroundingAddendum(policy);
+
+  assert.ok(addendum);
+  assert.match(addendum, /findTransactionsTool/);
+  assert.match(addendum, /getFinanceContext/);
+  assert.match(addendum, /month without a year/i);
+});
+
+test('prepareGastiFinanceAgentMessages leaves greetings unchanged', () => {
+  const prepared = prepareGastiFinanceAgentMessages('Hola');
+
+  assert.equal(prepared.messages, 'Hola');
+  assert.equal(prepared.policy.questionType, 'non_finance');
+});
+
+test('prepareGastiFinanceAgentMessages augments the last user message for finance grounding', () => {
+  const prepared = prepareGastiFinanceAgentMessages([
+    { role: 'assistant', content: 'Hola' },
+    { role: 'user', content: 'Cuánto gasté en Netflix en mayo?' },
+  ]);
+
+  assert.ok(Array.isArray(prepared.messages));
+  assert.equal(prepared.messages.at(-1)?.role, 'user');
+  assert.match(prepared.messages.at(-1)?.content ?? '', /Cuánto gasté en Netflix en mayo\?/);
+  assert.match(prepared.messages.at(-1)?.content ?? '', /acceptable finance tools/i);
 });
 
 test('conversation memory database path is independent of process cwd', () => {

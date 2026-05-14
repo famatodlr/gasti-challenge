@@ -61,6 +61,25 @@ const transactionSchema = z.object({
 });
 ```
 
+Shared additive output metadata:
+
+```ts
+const periodMetaSchema = z.object({
+  dayCount: z.number(),
+  spansSingleMonth: z.boolean(),
+  isFullCalendarMonth: z.boolean(),
+  isMonthToDate: z.boolean(),
+  completeness: z.enum(["complete", "partial"]),
+  partialReason: z.enum(["latest_dataset_month_to_date"]).optional(),
+});
+```
+
+Notes:
+
+- `completeness: "partial"` is reserved for latest-dataset month-to-date periods.
+- Custom mid-month ranges remain `complete` unless they literally represent the latest dataset month-to-date slice.
+- Tools should expose compact facts, drivers, caveats, completeness metadata, and enough evidence IDs for the assistant to narrate without redoing calculations.
+
 ## `getFinanceContext`
 
 Purpose: expose deterministic metadata about the local ARS transaction dataset.
@@ -253,6 +272,7 @@ Output:
 ```ts
 z.object({
   period: dateRangeSchema,
+  periodMeta: periodMetaSchema,
   currency: z.literal("ARS"),
   total: z.number(),
   transactionCount: z.number(),
@@ -264,6 +284,47 @@ z.object({
     sharePct: z.number(),
     transactionIds: z.array(z.string()),
   })),
+  topGroups: z.array(z.object({
+    key: z.string(),
+    label: z.string(),
+    total: z.number(),
+    count: z.number(),
+    sharePct: z.number(),
+    transactionIds: z.array(z.string()),
+  })),
+  topMerchants: z.array(z.object({
+    key: z.string(),
+    label: z.string(),
+    total: z.number(),
+    count: z.number(),
+    sharePct: z.number(),
+    transactionIds: z.array(z.string()),
+  })),
+  highlights: z.object({
+    dominantGroup: z.object({
+      key: z.string(),
+      label: z.string(),
+      total: z.number(),
+      count: z.number(),
+      sharePct: z.number(),
+      transactionIds: z.array(z.string()),
+    }).optional(),
+    dominantMerchant: z.object({
+      key: z.string(),
+      label: z.string(),
+      total: z.number(),
+      count: z.number(),
+      sharePct: z.number(),
+      transactionIds: z.array(z.string()),
+    }).optional(),
+    largestTransaction: z.object({
+      id: z.string(),
+      merchant: z.string(),
+      category: categorySchema,
+      amount: z.number(),
+      date: z.string(),
+    }).optional(),
+  }),
   topTransactions: z.array(transactionSchema),
   assumptions: z.array(z.string()),
 })
@@ -296,10 +357,46 @@ Output:
 ```ts
 z.object({
   period: dateRangeSchema,
+  periodMeta: periodMetaSchema,
   currency: z.literal("ARS"),
   filtersApplied: z.array(z.string()),
+  filters: z.object({
+    dateRange: dateRangeSchema.optional(),
+    categories: z.array(categorySchema).optional(),
+    merchants: z.array(z.string()).optional(),
+    query: z.string().optional(),
+    minAmount: z.number().optional(),
+    maxAmount: z.number().optional(),
+    sortBy: z.enum(["date_desc", "amount_desc", "amount_asc"]),
+    limit: z.number(),
+  }),
   total: z.number(),
   transactionCount: z.number(),
+  summary: z.object({
+    total: z.number(),
+    transactionCount: z.number(),
+    uniqueMerchants: z.number(),
+    topCategories: z.array(z.object({
+      key: z.string(),
+      label: z.string(),
+      total: z.number(),
+      count: z.number(),
+      sharePct: z.number(),
+      transactionIds: z.array(z.string()),
+    })),
+    topMerchants: z.array(z.object({
+      key: z.string(),
+      label: z.string(),
+      total: z.number(),
+      count: z.number(),
+      sharePct: z.number(),
+      transactionIds: z.array(z.string()),
+    })),
+    amountRange: z.object({
+      min: z.number(),
+      max: z.number(),
+    }),
+  }),
   transactions: z.array(transactionSchema),
 })
 ```
@@ -330,11 +427,13 @@ z.object({
   currency: z.literal("ARS"),
   current: z.object({
     period: dateRangeSchema,
+    periodMeta: periodMetaSchema,
     total: z.number(),
     transactionCount: z.number(),
   }),
   baseline: z.object({
     period: dateRangeSchema,
+    periodMeta: periodMetaSchema,
     total: z.number(),
     transactionCount: z.number(),
   }),
@@ -348,6 +447,23 @@ z.object({
     label: z.string(),
     currentTotal: z.number(),
     baselineTotal: z.number(),
+    deltaAmount: z.number(),
+    deltaPercent: z.number().nullable(),
+    driverTransactionIds: z.array(z.string()),
+  })),
+  comparisonBasis: z.object({
+    mode: z.literal("exact_ranges"),
+    currentLabel: z.string(),
+    baselineLabel: z.string(),
+    currentDayCount: z.number(),
+    baselineDayCount: z.number(),
+    sameLength: z.boolean(),
+    normalized: z.literal(false),
+  }),
+  topMovers: z.array(z.object({
+    key: z.string(),
+    label: z.string(),
+    direction: z.enum(["up", "down", "flat"]),
     deltaAmount: z.number(),
     deltaPercent: z.number().nullable(),
     driverTransactionIds: z.array(z.string()),
@@ -378,8 +494,16 @@ Output:
 ```ts
 z.object({
   period: dateRangeSchema,
+  periodMeta: periodMetaSchema,
   currency: z.literal("ARS"),
   estimatedMonthlyCommittedSpend: z.number(),
+  summary: z.object({
+    committedMonthlyTotal: z.number(),
+    highConfidenceCount: z.number(),
+    possibleZombieCount: z.number(),
+    fixedLikeCount: z.number(),
+    variableRepeatCount: z.number(),
+  }),
   items: z.array(z.object({
     merchant: z.string(),
     category: categorySchema,
@@ -391,6 +515,11 @@ z.object({
     confidence: z.enum(["high", "medium", "low"]),
     reason: z.string(),
     possibleZombie: z.boolean(),
+    occurrenceCount: z.number(),
+    firstSeen: z.string(),
+    lastSeen: z.string(),
+    classification: z.enum(["compromiso", "repeticion_variable"]),
+    occurrenceIds: z.array(z.string()),
   })),
   caveats: z.array(z.string()),
 })
@@ -423,6 +552,7 @@ Output:
 ```ts
 z.object({
   periodObserved: dateRangeSchema,
+  periodMeta: periodMetaSchema,
   currency: z.literal("ARS"),
   observedSpend: z.number(),
   observedFixedSpend: z.number(),
@@ -439,6 +569,16 @@ z.object({
   monthlyIncome: z.number().optional(),
   projectedSavingsOrDeficit: z.number().optional(),
   targetGap: z.number().optional(),
+  projectionBasis: z.object({
+    mode: z.literal("month_to_date_run_rate"),
+    observedDayCount: z.number(),
+    remainingDayCount: z.number(),
+    fixedCategoriesExcludedFromRunRate: z.array(categorySchema),
+  }),
+  drivers: z.object({
+    fixedSharePct: z.number(),
+    variableSharePct: z.number(),
+  }),
   assumptions: z.array(z.string()),
   confidence: z.enum(["high", "medium", "low"]),
 })

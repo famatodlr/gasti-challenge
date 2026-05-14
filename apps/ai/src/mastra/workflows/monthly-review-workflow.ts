@@ -635,32 +635,12 @@ export function createMonthlyFinancialReviewWorkflow({
         return inputData;
       }
 
-      const comparisonSource = inputData.comparison && inputData.categoryComparisonGroups
-        ? {
-            currency: 'ARS' as const,
-            current: {
-              period: inputData.period.range,
-              total: inputData.kpis?.totalSpending ?? 0,
-              transactionCount: inputData.kpis?.transactionCount ?? 0,
-            },
-            baseline: {
-              period: inputData.comparison.baselineRange,
-              total: (inputData.kpis?.totalSpending ?? 0) - inputData.comparison.absoluteDifference,
-              transactionCount: 0,
-            },
-            delta: {
-              amount: inputData.comparison.absoluteDifference,
-              percent: inputData.comparison.percentageDifference,
-              direction:
-                inputData.comparison.absoluteDifference > 0
-                  ? ('up' as const)
-                  : inputData.comparison.absoluteDifference < 0
-                    ? ('down' as const)
-                    : ('flat' as const),
-            },
-            groups: inputData.categoryComparisonGroups,
-            caveats: [],
-          }
+      const comparisonSource = inputData.comparison
+        ? comparePeriods(inputData.allTransactions ?? [], {
+            currentRange: inputData.period.range,
+            baselineRange: inputData.comparison.baselineRange,
+            groupBy: 'category',
+          })
         : undefined;
 
       return {
