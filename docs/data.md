@@ -1,6 +1,6 @@
 # Mock Transaction Data Spec
 
-> Internal data note. This file is support material from development and is not required to run or review the final deliverable. For the delivery-facing overview, start with [README.md](/Users/franco/Documentos/gasti-challenge/README.md).
+> Internal data note. This file is support material from development and is not required to run or review the final deliverable. For the delivery-facing overview, start with [README.md](../README.md).
 
 ## Existing Data
 

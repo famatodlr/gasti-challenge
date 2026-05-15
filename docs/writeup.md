@@ -1,0 +1,23 @@
+# Writeup
+
+Arranqué el proyecto tratando de entender Mastra antes de ponerme a codear features. No quería usarlo como una API random arriba del modelo, sino entender cuáles eran las primitivas que ofrecía y dónde tenía sentido apoyarme en ellas. Lo primero que trabajé fue el agente principal con tools tipadas por schemas. Esa parte me pareció bastante natural para Gasti: el modelo puede interpretar qué quiere el usuario, pero los cálculos importantes (comparaciones, rankings, proyecciones, gastos recurrentes) quedan encapsulados en tools más determinísticas y fáciles de testear.
+
+Después seguí con la memoria, porque para que el chat se sintiera medianamente real necesitaba continuidad entre mensajes. Al principio implementé una versión propia para mantener contexto, pero después investigando Mastra vi que ya tenía soporte para memoria por threads. Entonces saqué lo mío y pasé a usar la memoria de Mastra, que era más idiomático y además me permitía separar mejor las conversaciones. A la vez, mantuve aparte una memoria financiera persistente y estructurada propia para datos del usuario que queria guardar entre threaths.
+
+También bastante temprano armé una UI simple para poder probar el producto como chat real, y no estar todo el tiempo pegándole por curl desde la terminal. La primera versión era bastante básica: mandar mensajes, ver respuestas y poco más, sin demasiado color ni logo. Después le fui agregando un poco más de onda y sumé al costado una especie de panel de actividad para ver qué estaba haciendo internamente el agente. La idea era acercarme a algo tipo ChatGPT cuando muestra qué tool está usando, pero lo resolví de una forma más simple para no trabarme demasiado en una feature que estaba buena para la demo, pero no era el centro del proyecto.
+
+También agregué una capa de fallback entre modelos. Me pasó varias veces que una request fallaba por cuota o rate limit, entonces implementé un mecanismo para intentar con otro modelo de la cadena sin que el usuario tenga que enterarse ni repetir el mensaje. No es una feature muy visible en la demo, pero para mí suma bastante porque hace que la experiencia sea más robusta y menos frágil frente a errores del provider.
+
+Más adelante quise probar workflows. No los agregué porque sí ni intenté convertir todo en workflows, pero sí quería entender bien cómo funcionaban en Mastra. Busqué casos donde hubiera una secuencia más repetitiva y estructurada que una conversación normal, como el resumen mensual o un saludo al usuario. Ahí me sirvieron porque me obligaban a separar pasos: resolver período, calcular métricas, comparar, generar insights y recién después redactar. Para el resto de las consultas preferí dejar el agente común con tools, que era más flexible.
+
+Para trabajar con IA fui bastante iterativo. Muchas veces armaba planes con GPT, se los pasaba a Codex para implementar, y después volvía a traer el resultado a GPT para revisarlo, mejorarlo o ajustar el enfoque. No me quedaba solo con “pasaron los tests”. Probaba las features manualmente, especialmente las más complejas, y varias veces me di cuenta de que Codex decía que había hecho algo pero en realidad lo había resuelto a medias, o que el arreglo pasaba tests pero no funcionaba bien en el flujo real. Eso me pasó bastante con las features complejas como workflows, tools que interactuaban entre sí y cambios de UI. En esas partes hubo que iterar veces hasta que el comportamiento quedara como quería.
+
+Algo que me divirtió bastante fue trabajar con cosas que no conocía tanto. Mastra, TypeScript, armar un chatbots, etc. Aprender todo hizo que el proyecto fuera más interesante que solo pegarle a la API de un LLM.
+
+Una de las partes que más me costó fue controlar el estilo de respuesta del modelo. Incluso usando schemas y teniendo tools bastante claras, lograr que responda siempre con el tono, el formato o de la forma que yo quería me costo bastante. A veces escribía mucho, a veces usaba pocos o muchos emojis, a veces cambiaba palabras o formatos entre respuestas parecidas. Mejoró bastante con prompts, response builders y ajustes de UI, pero creo que todavía puede mejorar bastante.
+
+Si siguiera iterando, me gustaria hacer lo siguiente:
+- Poder acceder a dashboards visuales para tendencias, comparaciones y alertas, sin reemplazar el chat.
+- Semantic recall o RAG o algo similar para poder acceder a memorias de conversaciones de otros threads, sin que pase por la memoria persistida.
+- Mejorar la UI
+- Poder hacer ABM de gastos e ingresos. Senti que el foco del challenge estaba en analizar los datos que ya teniamos y no tanto en cargar datos en si.

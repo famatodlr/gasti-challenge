@@ -71,7 +71,7 @@ Antes de una demo conviene resetear la memoria del usuario demo:
 bun run demo:reset-memory
 ```
 
-Detalles de qué persiste, qué resetea cada comando y el flujo recomendado están en [docs/demo-memory.md](/Users/franco/Documentos/gasti-challenge/docs/demo-memory.md).
+Detalles de qué persiste, qué resetea cada comando y el flujo recomendado están en [docs/demo-memory.md](./docs/demo-memory.md).
 
 ## Tools del agente y por qué
 
@@ -83,7 +83,7 @@ Detalles de qué persiste, qué resetea cada comando y el flujo recomendado est�
 - `getFinanceContext`: ancla fechas disponibles y evita inventar cobertura del dataset.
 - `getFinancialMemory` y `updateFinancialMemory`: separan claramente continuidad conversacional de contexto financiero explícito del usuario demo.
 
-Más detalle técnico sobre Mastra, workflows y memoria en [docs/agent.md](/Users/franco/Documentos/gasti-challenge/docs/agent.md).
+Más detalle técnico sobre Mastra, workflows y memoria en [docs/agent.md](./docs/agent.md).
 
 ## Decisiones de producto
 
@@ -118,19 +118,20 @@ Si los tests de memoria fallan por datos persistidos de una demo anterior, se pu
 
 bun run demo:reset-memory
 
-Hay un checklist final en [docs/final-checklist.md](/Users/franco/Documentos/gasti-challenge/docs/final-checklist.md).
+Hay un checklist final en [docs/final-checklist.md](./docs/final-checklist.md).
 
 ## Trabajo a futuro:
 
-- Multiusuario real con aislamiento de memoria y contexto.
+- ABM de gastos.
 - Semantic recall o una estrategia de recuperación de memoria entre conversaciones.
 - Más profundidad en memoria financiera y mejores controles de edición.
 - Dashboards visuales tendencias o comparaciones, sin sacar al chat del centro.
+- Multiusuario real con aislamiento de memoria y contexto.
 
 ## Documentación complementaria
 
-- [docs/agent.md](/Users/franco/Documentos/gasti-challenge/docs/agent.md): arquitectura del agente, uso de Mastra y límites del sistema.
-- [docs/demo-memory.md](/Users/franco/Documentos/gasti-challenge/docs/demo-memory.md): manejo de memoria demo y reset por terminal.
-- [docs/writeup-draft.md](/Users/franco/Documentos/gasti-challenge/docs/writeup-draft.md): primera iteración del writeup.
+- [docs/agent.md](./docs/agent.md): arquitectura del agente, uso de Mastra y límites del sistema.
+- [docs/demo-memory.md](./docs/demo-memory.md): manejo de memoria demo y reset por terminal.
+- [docs/writeup-draft.md](./docs/writeup-draft.md): primera iteración del writeup.
 
-Los archivos [docs/product.md](/Users/franco/Documentos/gasti-challenge/docs/product.md), [docs/tools.md](/Users/franco/Documentos/gasti-challenge/docs/tools.md) y [docs/data.md](/Users/franco/Documentos/gasti-challenge/docs/data.md) quedan como notas internas de soporte y no son necesarias para correr ni evaluar el proyecto.
+Los archivos [docs/product.md](./docs/product.md), [docs/tools.md](./docs/tools.md) y [docs/data.md](./docs/data.md) quedan como notas internas de soporte y no son necesarias para correr ni evaluar el proyecto.

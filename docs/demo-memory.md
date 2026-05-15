@@ -27,6 +27,28 @@ Ejemplos de lo que puede vivir ahí:
 - preferencias de respuesta
 - gastos fijos confirmados
 
+### Formato persistido (`data/financial-memory.json`)
+
+La memoria financiera persistente se guarda como JSON estricto con este shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "resourceId": "demo-user",
+  "currency": "ARS",
+  "knownIncome": [],
+  "fixedExpenses": [],
+  "savingGoals": [],
+  "watchCategories": [],
+  "recurringObservations": [],
+  "preferences": {
+    "preferredLanguage": "es-AR",
+    "answerStyle": "concise",
+    "includeEvidence": true
+  }
+}
+```
+
 ## Qué hace cada comando de reset
 
 Desde la raíz del repo:

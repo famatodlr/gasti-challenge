@@ -1,6 +1,6 @@
 # Product Spec: Gasti
 
-> Internal product note. This file is support material from development and is not required to run or evaluate the final deliverable. For the delivery-facing overview, start with [README.md](/Users/franco/Documentos/gasti-challenge/README.md) and [agent.md](/Users/franco/Documentos/gasti-challenge/docs/agent.md).
+> Internal product note. This file is support material from development and is not required to run or evaluate the final deliverable. For the delivery-facing overview, start with [README.md](../README.md) and [agent.md](./agent.md).
 
 ## Product Angle
 

@@ -1,6 +1,6 @@
 # Mastra Tools Spec
 
-> Internal tool spec. This file is support material from development and is not required to run or review the final deliverable. For the delivery-facing overview, start with [README.md](/Users/franco/Documentos/gasti-challenge/README.md) and [agent.md](/Users/franco/Documentos/gasti-challenge/docs/agent.md).
+> Internal tool spec. This file is support material from development and is not required to run or review the final deliverable. For the delivery-facing overview, start with [README.md](../README.md) and [agent.md](./agent.md).
 
 ## Tool Design Rules
 
