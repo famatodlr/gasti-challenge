@@ -24,7 +24,7 @@ Prerequisitos:
 - Bun
 - `GEMINI_API_KEY`
 
-Configurar variables de entorno (archivo unico en la raiz):
+Configurar variables de entorno (archivo único en la raíz):
 
 ```bash
 cp .env.example .env
@@ -73,6 +73,10 @@ bun run demo:reset-memory
 
 Detalles de qué persiste, qué resetea cada comando y el flujo recomendado están en [docs/demo-memory.md](./docs/demo-memory.md).
 
+## Loom
+
+- Demo completa: [Loom / walkthrough](https://drive.google.com/file/d/1wUq4QTJ7943W22c_ciJwAIWdWE9T9Six/view?usp=sharing)
+
 ## Tools del agente y por qué
 
 - `spendingSummaryTool`: resuelve preguntas base como cuánto gasté y en qué se fue la plata.
@@ -102,13 +106,13 @@ bun run build
 
 Para correr toda la suite de tests:
 
-```
+```bash
 bun run test
 ```
 
 También se pueden correr las validaciones por módulo:
 
-```
+```bash
 bun run test:ai
 bun run test:api
 bun run test:ui
@@ -116,7 +120,9 @@ bun run test:ui
 
 Si los tests de memoria fallan por datos persistidos de una demo anterior, se puede resetear la memoria demo con:
 
+```bash
 bun run demo:reset-memory
+```
 
 Hay un checklist final en [docs/final-checklist.md](./docs/final-checklist.md).
 
@@ -125,13 +131,13 @@ Hay un checklist final en [docs/final-checklist.md](./docs/final-checklist.md).
 - ABM de gastos.
 - Semantic recall o una estrategia de recuperación de memoria entre conversaciones.
 - Más profundidad en memoria financiera y mejores controles de edición.
-- Dashboards visuales tendencias o comparaciones, sin sacar al chat del centro.
+- Dashboards visuales de tendencias o comparaciones, sin sacar al chat del centro.
 - Multiusuario real con aislamiento de memoria y contexto.
 
 ## Documentación complementaria
 
 - [docs/agent.md](./docs/agent.md): arquitectura del agente, uso de Mastra y límites del sistema.
 - [docs/demo-memory.md](./docs/demo-memory.md): manejo de memoria demo y reset por terminal.
-- [docs/writeup-draft.md](./docs/writeup-draft.md): primera iteración del writeup.
+- [docs/writeup.md](./docs/writeup.md): writeup del proceso de desarrollo.
 
 Los archivos [docs/product.md](./docs/product.md), [docs/tools.md](./docs/tools.md) y [docs/data.md](./docs/data.md) quedan como notas internas de soporte y no son necesarias para correr ni evaluar el proyecto.
